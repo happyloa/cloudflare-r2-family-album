@@ -45,9 +45,7 @@ lib/           # 共用函式庫
    npm run dev
    ```
 4. 其他腳本：
-   - `npm run lint`：以 ESLint 檢查程式碼
    - `npm run build`：產生生產環境建置成果
-   - `npm run test`：執行 Vitest 測試
 
 ## 環境變數
 
