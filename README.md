@@ -18,10 +18,12 @@ app/           # Next.js App Router 頁面與 API Routes
   api/         # 後端邏輯，運行於 Edge Runtime
 components/    # 前端 React 元件
   media/       # 媒體瀏覽相關元件
-    hooks/     # useMediaData, useAdminAuth, useMediaActions, useMediaDragDrop
+    hooks/     # useMediaData, useAdminAuth, useMediaActions, useMediaDragDrop, useMessage
 lib/           # 共用函式庫
   r2.ts        # Cloudflare R2 操作封裝 (aws4fetch)
-  admin-rate-limit.ts  # 速率限制邏輯
+  ensure-admin.ts  # 管理員身分驗證與 IP 速率限制邏輯
+  upload/      # 上傳相關常數定義
+
 ```
 
 ## 需求與相依
@@ -66,9 +68,10 @@ lib/           # 共用函式庫
 | 方法   | 路徑                 | 用途                               | 認證            |
 | ------ | -------------------- | ---------------------------------- | --------------- |
 | GET    | `/api/media?prefix=` | 取得指定 prefix 的資料夾與媒體清單 | 不需            |
-| POST   | `/api/media`         | 建立資料夾                         | `x-admin-token` |
+| POST   | `/api/media`         | 建立資料夾或驗證管理密碼           | `x-admin-token` |
 | PATCH  | `/api/media`         | 重新命名或移動                     | `x-admin-token` |
 | DELETE | `/api/media`         | 刪除檔案或資料夾                   | `x-admin-token` |
+| GET    | `/api/media/usage`   | 取得儲存貯體 (Bucket) 已使用容量   | 不需            |
 | POST   | `/api/upload`        | 上傳圖片 / 影片                    | `x-admin-token` |
 
 ## 部署建議（Cloudflare Pages）
