@@ -680,10 +680,12 @@ export async function renameFolder(key: string, newName: string) {
 
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
 
-  for (const sourceKey of keys) {
-    const targetKey = sourceKey.replace(sourcePrefix, targetPrefix);
-    await copyObjectWithinBucket(sourceKey, targetKey);
-  }
+  await Promise.all(
+    keys.map((sourceKey) => {
+      const targetKey = sourceKey.replace(sourcePrefix, targetPrefix);
+      return copyObjectWithinBucket(sourceKey, targetKey);
+    })
+  );
 
   await deleteObjects(keys);
 
@@ -726,6 +728,7 @@ export async function deleteFolder(
     const existingNames = await listExistingFileNames(safeParentPrefix);
     const filesToMove = keys.filter((key) => !key.endsWith("/"));
 
+    const copyTasks: { sourceKey: string; targetKey: string }[] = [];
     for (const sourceKey of filesToMove) {
       const filename = sourceKey.split("/").pop();
       if (!filename) continue;
@@ -740,8 +743,14 @@ export async function deleteFolder(
         : resolvedName;
       if (targetKey === sourceKey) continue;
 
-      await copyObjectWithinBucket(sourceKey, targetKey);
+      copyTasks.push({ sourceKey, targetKey });
     }
+
+    await Promise.all(
+      copyTasks.map(({ sourceKey, targetKey }) =>
+        copyObjectWithinBucket(sourceKey, targetKey)
+      )
+    );
   }
 
   await deleteObjects(keys);
@@ -807,10 +816,12 @@ export async function moveFolder(key: string, targetPrefix: string) {
   const existingNamesByFolder =
     await listExistingFileNamesByFolder(targetFolderPath);
 
+  const copyTasks: { sourceKey: string; targetKey: string }[] = [];
+
   for (const sourceKey of keys) {
     const targetKey = sourceKey.replace(sourcePrefix, targetPrefixKey);
     if (sourceKey.endsWith("/")) {
-      await copyObjectWithinBucket(sourceKey, targetKey);
+      copyTasks.push({ sourceKey, targetKey });
       continue;
     }
 
@@ -830,8 +841,14 @@ export async function moveFolder(key: string, targetPrefix: string) {
       ? `${targetFolder}/${resolvedName}`
       : resolvedName;
 
-    await copyObjectWithinBucket(sourceKey, resolvedTargetKey);
+    copyTasks.push({ sourceKey, targetKey: resolvedTargetKey });
   }
+
+  await Promise.all(
+    copyTasks.map(({ sourceKey, targetKey }) =>
+      copyObjectWithinBucket(sourceKey, targetKey)
+    )
+  );
 
   await deleteObjects(keys);
 
