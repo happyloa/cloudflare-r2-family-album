@@ -70,7 +70,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   const hasImages = useMemo(() => files.some((file) => file.type === 'image'), [files]);
   const hasVideos = useMemo(() => files.some((file) => file.type === 'video'), [files]);
   const filterVisible = hasImages && hasVideos;
-  const searchEnabled = files.length > 36;
+  const searchEnabled = files.length > 0;
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   // 若目前過濾選項隱藏，自動重設為 "all"
