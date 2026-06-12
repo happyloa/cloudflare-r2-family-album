@@ -184,6 +184,8 @@ export function MediaGrid() {
   const [dropUploading, setDropUploading] = useState(false);
   const [dropProgress, setDropProgress] = useState(0);
   const dragCounter = useRef(0);
+  // 站內媒體/資料夾拖曳期間為 true，避免整頁上傳層誤觸（瀏覽器原生拖圖會帶 Files 型別）
+  const internalDragRef = useRef(false);
 
   const handleDroppedFiles = useCallback(
     async (dropped: File[]) => {
@@ -239,22 +241,23 @@ export function MediaGrid() {
   );
 
   useEffect(() => {
-    const hasFiles = (event: DragEvent) =>
-      Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    // 只接受「從外部拖入的檔案」：必須帶 Files 型別，且非站內拖曳
+    const isExternalFileDrag = (event: DragEvent) =>
+      !internalDragRef.current && Array.from(event.dataTransfer?.types ?? []).includes('Files');
 
     const onDragEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!isExternalFileDrag(event)) return;
       event.preventDefault();
       dragCounter.current += 1;
       setDropActive(true);
     };
     const onDragOver = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!isExternalFileDrag(event)) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
     const onDragLeave = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!isExternalFileDrag(event)) return;
       dragCounter.current -= 1;
       if (dragCounter.current <= 0) {
         dragCounter.current = 0;
@@ -262,10 +265,10 @@ export function MediaGrid() {
       }
     };
     const onDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
-      event.preventDefault();
       dragCounter.current = 0;
       setDropActive(false);
+      if (!isExternalFileDrag(event)) return;
+      event.preventDefault();
       const list = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
       if (list.length) void handleDroppedFiles(list);
     };
@@ -476,8 +479,14 @@ export function MediaGrid() {
             onItemClick={selection.handleClick}
             onToggleSelect={selection.toggle}
             onContextMenu={openMenu}
-            onDragStart={handleMediaDragStart}
-            onDragEnd={handleMediaDragEnd}
+            onDragStart={(file, event) => {
+              internalDragRef.current = true;
+              handleMediaDragStart(file, event);
+            }}
+            onDragEnd={() => {
+              internalDragRef.current = false;
+              handleMediaDragEnd();
+            }}
           />
         </>
       )}

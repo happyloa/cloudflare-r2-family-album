@@ -76,6 +76,7 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
       muted
       playsInline
       loop
+      draggable={false}
       preload="metadata"
       aria-label={alt}
       onCanPlay={notifyReady}
@@ -104,6 +105,7 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
           src={media.url}
           alt={media.key}
           fill
+          draggable={false}
           sizes="(min-width: 1024px) 25vw, 50vw"
           className={`object-cover transition-[opacity,filter,transform] duration-500 ${isLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-80 blur-xl scale-105'
             }`}
