@@ -7,6 +7,8 @@ import {
 import { getDepth } from "@/components/media/sanitize";
 import { requireAdmin } from "@/lib/ensure-admin";
 import {
+  batchDelete,
+  batchMove,
   createFolder,
   deleteFile,
   deleteFolder,
@@ -16,6 +18,21 @@ import {
   renameFile,
   renameFolder,
 } from "@/lib/r2";
+
+type BatchItem = { key: string; isFolder?: boolean };
+
+// 解析並驗證批次操作的項目陣列
+function parseBatchItems(value: unknown): BatchItem[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const items: BatchItem[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") return null;
+    const key = (raw as { key?: unknown }).key;
+    if (typeof key !== "string" || !key) return null;
+    items.push({ key, isFolder: Boolean((raw as { isFolder?: unknown }).isFolder) });
+  }
+  return items;
+}
 
 // 設定 Edge Runtime 以相容 Cloudflare Pages 部署
 export const runtime = "edge";
@@ -122,6 +139,29 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
 
+    // 批次移動：將多個項目移動到同一個目標路徑
+    if (body?.action === "batch-move") {
+      const items = parseBatchItems(body.items);
+      if (!items) {
+        return NextResponse.json({ error: "缺少要移動的項目" }, { status: 400 });
+      }
+      if (!("targetPrefix" in body)) {
+        return NextResponse.json({ error: "缺少目標路徑" }, { status: 400 });
+      }
+
+      const hasFolder = items.some((item) => item.isFolder);
+      const moveError = validateMoveTarget(body.targetPrefix || "", hasFolder);
+      if (moveError) {
+        return NextResponse.json({ error: moveError }, { status: 400 });
+      }
+
+      await batchMove(
+        items.map((item) => ({ key: item.key, isFolder: Boolean(item.isFolder) })),
+        body.targetPrefix || "",
+      );
+      return NextResponse.json({ ok: true });
+    }
+
     if (body?.action !== "rename" && body?.action !== "move") {
       return NextResponse.json({ error: "未知的請求" }, { status: 400 });
     }
@@ -183,6 +223,19 @@ export async function DELETE(request: NextRequest) {
     if (authError) return authError;
 
     const body = await request.json();
+
+    // 批次刪除：一次刪除多個檔案與資料夾
+    if (body?.action === "batch-delete") {
+      const items = parseBatchItems(body.items);
+      if (!items) {
+        return NextResponse.json({ error: "缺少要刪除的項目" }, { status: 400 });
+      }
+
+      await batchDelete(
+        items.map((item) => ({ key: item.key, isFolder: Boolean(item.isFolder) })),
+      );
+      return NextResponse.json({});
+    }
 
     if (body?.action !== "delete") {
       return NextResponse.json({ error: "未知的請求" }, { status: 400 });

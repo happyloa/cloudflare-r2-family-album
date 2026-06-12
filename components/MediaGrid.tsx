@@ -1,28 +1,40 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { uploadFiles } from '@/lib/upload/client';
+import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
 import { AdminAccessPanel } from './media/AdminAccessPanel';
 import { AdminActionModal } from './media/AdminActionModal';
+import { BatchMoveModal } from './media/BatchMoveModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
+import { ConfirmDialog } from './media/ConfirmDialog';
+import { ContextMenu, ContextMenuItem } from './media/ContextMenu';
 import {
-  ITEMS_PER_PAGE,
   MAX_ADMIN_TOKEN_LENGTH,
   MAX_FOLDER_DEPTH,
   MAX_FOLDER_NAME_LENGTH
 } from './media/constants';
+import { DropzoneOverlay } from './media/DropzoneOverlay';
 import { EmptyState } from './media/EmptyState';
 import { FolderCreator } from './media/FolderCreator';
 import { FolderGrid } from './media/FolderGrid';
 import { useAdminAuth } from './media/hooks/useAdminAuth';
+import { useBucketUsage } from './media/hooks/useBucketUsage';
+import { useContextMenu } from './media/hooks/useContextMenu';
+import { useDialogs } from './media/hooks/useDialogs';
 import { useMediaActions } from './media/hooks/useMediaActions';
 import { useMediaData } from './media/hooks/useMediaData';
 import { useMediaDragDrop } from './media/hooks/useMediaDragDrop';
 import { useMessage } from './media/hooks/useMessage';
+import { makeSelectionId, useSelection } from './media/hooks/useSelection';
 import { MediaPreviewModal } from './media/MediaPreviewModal';
 import { MediaSection } from './media/MediaSection';
 import { MediaSkeleton } from './media/MediaSkeleton';
 import { MessageToast } from './media/MessageToast';
+import { PasswordPromptModal } from './media/PasswordPromptModal';
+import { SelectionToolbar } from './media/SelectionToolbar';
 import { getDepth, sanitizeName, sanitizePath } from './media/sanitize';
 import { MediaFile } from './media/types';
 import { UploadForm } from './UploadForm';
@@ -36,10 +48,11 @@ type PreviewState = {
 
 /**
  * MediaGrid Component: 專案核心元件
- * 整合了媒體瀏覽、資料夾導覽、管理員權限驗證、上傳與檔案操作功能。
+ * 整合媒體瀏覽、資料夾導覽、權限驗證、上傳、檔案操作，以及 Drive 風的多選 / 右鍵 / 拖曳上傳。
  */
 export function MediaGrid() {
   const { message, messageTone, pushMessage } = useMessage();
+  const { passwordReq, confirmReq, openPassword, confirm, closePassword, closeConfirm } = useDialogs();
 
   const {
     files,
@@ -48,21 +61,29 @@ export function MediaGrid() {
     currentPrefix,
     setCurrentPrefix,
     loadMedia,
+    removeLocalItems,
+    renameLocalItem,
     filter,
     setFilter,
     searchQuery,
     setSearchQuery,
-    currentPage,
-    setCurrentPage,
-    totalPages,
-    paginatedFiles,
+    sortKey,
+    setSortKey,
+    sortDir,
+    setSortDir,
+    visibleFiles,
+    hasMore,
+    loadMore,
     filteredFiles,
     filterVisible,
     searchEnabled
   } = useMediaData({ pushMessage });
 
+  const usage = useBucketUsage();
+
   const {
     adminToken,
+    adminTokenRef,
     adminInput,
     isAdmin,
     setAdminInput,
@@ -70,7 +91,7 @@ export function MediaGrid() {
     clearAdminSession,
     requestAdminToken,
     authorizedFetch
-  } = useAdminAuth({ pushMessage });
+  } = useAdminAuth({ pushMessage, openPassword });
 
   const {
     newFolderName,
@@ -79,12 +100,16 @@ export function MediaGrid() {
     adminAction,
     setAdminAction,
     openAdminActionModal,
-    handleAdminActionConfirm
+    handleAdminActionConfirm,
+    handleBatchMove,
+    handleBatchDelete
   } = useMediaActions({
     authorizedFetch,
     requestAdminToken,
     pushMessage,
     loadMedia,
+    removeLocalItems,
+    renameLocalItem,
     currentPrefix
   });
 
@@ -96,7 +121,24 @@ export function MediaGrid() {
     handleAdminActionConfirm
   });
 
+  // 選取項目順序：資料夾在前、可見檔案在後（供範圍選取）
+  const orderedIds = useMemo(
+    () => [
+      ...folders.map((folder) => makeSelectionId(folder.key, true)),
+      ...visibleFiles.map((file) => makeSelectionId(file.key, false))
+    ],
+    [folders, visibleFiles]
+  );
+  const selection = useSelection(orderedIds);
+  const { menu, openMenu, closeMenu } = useContextMenu();
+
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+
+  // 切換資料夾時清除選取（僅依路徑變動觸發）
+  useEffect(() => {
+    selection.clear();
+  }, [currentPrefix]);
 
   const depth = Math.min(getDepth(currentPrefix), MAX_FOLDER_DEPTH);
 
@@ -137,6 +179,169 @@ export function MediaGrid() {
     clearAdminSession('已退出管理模式');
   };
 
+  // ── 拖曳檔案到頁面上傳 ──
+  const [dropActive, setDropActive] = useState(false);
+  const [dropUploading, setDropUploading] = useState(false);
+  const [dropProgress, setDropProgress] = useState(0);
+  const dragCounter = useRef(0);
+
+  const handleDroppedFiles = useCallback(
+    async (dropped: File[]) => {
+      const selected = dropped.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+      if (selected.length === 0) {
+        pushMessage('沒有可上傳的圖片或影片檔案。', 'error');
+        return;
+      }
+      const within = selected.filter((f) => {
+        const limit = getSizeLimitByMime(f.type);
+        return typeof limit === 'number' && f.size <= limit;
+      });
+      const oversized = selected.length - within.length;
+      if (within.length === 0) {
+        pushMessage('檔案皆超過大小上限，請調整後再上傳。', 'error');
+        return;
+      }
+      const totalSize = within.reduce((sum, f) => sum + f.size, 0);
+      if (totalSize > MAX_TOTAL_SIZE_MB * 1024 * 1024) {
+        pushMessage(`總容量超過 ${MAX_TOTAL_SIZE_MB}MB，請分批上傳。`, 'error');
+        return;
+      }
+
+      const allowed = await requestAdminToken('請輸入管理密碼以上傳');
+      if (!allowed) return;
+
+      setDropUploading(true);
+      setDropProgress(0);
+      try {
+        const response = await uploadFiles({
+          files: within,
+          path: currentPrefix,
+          adminToken: adminTokenRef.current,
+          onProgress: (percent) => setDropProgress(percent ?? 0)
+        });
+        if (!response.ok) {
+          pushMessage('上傳失敗，請稍後再試。', 'error');
+        } else {
+          pushMessage(
+            `已上傳 ${within.length} 個檔案${oversized > 0 ? `（略過 ${oversized} 個過大檔案）` : ''}`,
+            'success'
+          );
+          await loadMedia(currentPrefix, { silent: true });
+          void usage.refresh(true);
+        }
+      } catch {
+        pushMessage('上傳時發生錯誤，請稍後再試。', 'error');
+      } finally {
+        setDropUploading(false);
+      }
+    },
+    [requestAdminToken, currentPrefix, adminTokenRef, pushMessage, loadMedia, usage]
+  );
+
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      Array.from(event.dataTransfer?.types ?? []).includes('Files');
+
+    const onDragEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      dragCounter.current += 1;
+      setDropActive(true);
+    };
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    };
+    const onDragLeave = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      dragCounter.current -= 1;
+      if (dragCounter.current <= 0) {
+        dragCounter.current = 0;
+        setDropActive(false);
+      }
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      dragCounter.current = 0;
+      setDropActive(false);
+      const list = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
+      if (list.length) void handleDroppedFiles(list);
+    };
+
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [handleDroppedFiles]);
+
+  // ── 右鍵 / 溢位選單內容 ──
+  const openTarget = (target: { key: string; isFolder: boolean }) => {
+    if (target.isFolder) {
+      handleEnterFolder(target.key);
+      return;
+    }
+    const file = files.find((item) => item.key === target.key);
+    if (file) setPreview({ media: file, trigger: null });
+  };
+
+  const contextItems: ContextMenuItem[] = useMemo(() => {
+    const target = menu.target;
+    if (!target) return [];
+    const targetId = makeSelectionId(target.key, target.isFolder);
+    const useBatch = selection.selectionMode && selection.isSelected(targetId) && selection.selectedCount > 1;
+
+    if (useBatch) {
+      return [
+        { label: `移動所選 (${selection.selectedCount})`, icon: '📁', onSelect: () => setBatchMoveOpen(true) },
+        { type: 'separator' },
+        {
+          label: `刪除所選 (${selection.selectedCount})`,
+          icon: '🗑️',
+          danger: true,
+          onSelect: () => void handleBatchDeleteClick()
+        }
+      ];
+    }
+
+    return [
+      { label: target.isFolder ? '開啟資料夾' : '預覽', icon: target.isFolder ? '📂' : '👁️', onSelect: () => openTarget(target) },
+      { label: '重新命名', icon: '✏️', onSelect: () => void openAdminActionModal('rename', target.key, target.isFolder) },
+      { label: '移動', icon: '📁', onSelect: () => void openAdminActionModal('move', target.key, target.isFolder) },
+      { type: 'separator' },
+      { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void openAdminActionModal('delete', target.key, target.isFolder) }
+    ];
+  }, [menu.target, selection.selectionMode, selection.selectedCount, files]);
+
+  // ── 批次操作 ──
+  const handleBatchDeleteClick = async () => {
+    const items = selection.selectedItems;
+    if (items.length === 0) return;
+    const ok = await confirm({
+      title: '刪除所選項目',
+      message: `確定刪除選取的 ${items.length} 個項目？資料夾會連同內容一併刪除，此操作無法復原。`,
+      confirmLabel: '刪除',
+      danger: true
+    });
+    if (!ok) return;
+    selection.clear();
+    await handleBatchDelete(items);
+  };
+
+  const handleBatchMoveConfirm = async (targetPrefix: string) => {
+    const items = selection.selectedItems;
+    setBatchMoveOpen(false);
+    selection.clear();
+    await handleBatchMove(items, targetPrefix);
+  };
+
   const hasItems = files.length > 0 || folders.length > 0;
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
 
@@ -154,7 +359,7 @@ export function MediaGrid() {
             </div>
             <h2 className="text-2xl font-bold text-white">媒體控制台</h2>
             <p className="text-sm leading-relaxed text-surface-400">
-              快速檢視路徑、啟用安全管理密碼，並在需要時開啟管理模式處理上傳與編輯。
+              快速檢視路徑、啟用安全管理密碼，並在需要時開啟管理模式處理上傳與編輯。管理模式下可框選、右鍵操作，或將檔案直接拖入頁面上傳。
             </p>
           </div>
         </div>
@@ -170,14 +375,27 @@ export function MediaGrid() {
           />
         </div>
 
-        {isAdmin ? <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <FolderCreator
-            value={newFolderName}
-            onChange={(value) => setNewFolderName(sanitizeName(value))}
-            onSubmit={handleCreateFolder}
-          />
-          <UploadForm adminToken={adminToken} currentPath={currentPrefix} onUploaded={() => loadMedia(currentPrefix)} />
-        </div> : null}
+        {isAdmin ? (
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <FolderCreator
+              value={newFolderName}
+              onChange={(value) => setNewFolderName(sanitizeName(value))}
+              onSubmit={handleCreateFolder}
+            />
+            <UploadForm
+              adminToken={adminToken}
+              currentPath={currentPrefix}
+              onUploaded={() => {
+                void loadMedia(currentPrefix, { silent: true });
+                void usage.refresh(true);
+              }}
+              usageBytes={usage.usageBytes}
+              usageLoading={usage.loading}
+              usageError={usage.error}
+              confirm={confirm}
+            />
+          </div>
+        ) : null}
       </div>
 
       <BreadcrumbNav
@@ -193,25 +411,27 @@ export function MediaGrid() {
         depth={depth}
       />
 
-      {isAdmin && isDraggingMedia && parentPrefix !== null ? <div
-        className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-primary-400/60 bg-primary-500/10 px-4 py-3 text-primary-50"
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'move';
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          void moveDraggedMediaTo(parentPrefix);
-        }}
-        role="button"
-        aria-label="將媒體放到上一層"
-      >
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className="text-lg">⬆️</span>
-          <span>放到上一層</span>
+      {isAdmin && isDraggingMedia && parentPrefix !== null ? (
+        <div
+          className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-primary-400/60 bg-primary-500/10 px-4 py-3 text-primary-50"
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            void moveDraggedMediaTo(parentPrefix);
+          }}
+          role="button"
+          aria-label="將媒體放到上一層"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <span className="text-lg">⬆️</span>
+            <span>放到上一層</span>
+          </div>
+          <p className="text-xs text-primary-100/80">將拖曳中的媒體移動到「{parentPrefix || '根目錄'}」</p>
         </div>
-        <p className="text-xs text-primary-100/80">將拖曳中的媒體移動到「{parentPrefix || '根目錄'}」</p>
-      </div> : null}
+      ) : null}
 
       {loading ? (
         <MediaSkeleton />
@@ -223,25 +443,22 @@ export function MediaGrid() {
             folders={folders}
             isAdmin={isAdmin}
             onEnter={handleEnterFolder}
-            onRename={(key) => openAdminActionModal('rename', key, true)}
-            onDelete={(key) => openAdminActionModal('delete', key, true)}
             canDropMedia={isAdmin ? isDraggingMedia : false}
             onDropMedia={(targetKey) => void moveDraggedMediaTo(targetKey)}
-            isRootLevel={currentPrefix === ''}
+            isSelected={selection.isSelected}
+            selectionMode={selection.selectionMode}
+            onItemClick={selection.handleClick}
+            onToggleSelect={selection.toggle}
+            onContextMenu={openMenu}
           />
 
           <MediaSection
             allFilesCount={files.length}
             files={filteredFiles}
-            paginatedFiles={paginatedFiles}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            onSelect={(file, trigger) => {
-              setPreview({ media: file, trigger });
-            }}
-            onRename={(key) => openAdminActionModal('rename', key, false)}
-            onDelete={(key) => openAdminActionModal('delete', key, false)}
+            visibleFiles={visibleFiles}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            onSelect={(file, trigger) => setPreview({ media: file, trigger })}
             filterLabel={filterLabel}
             filter={filter}
             filterVisible={filterVisible}
@@ -249,8 +466,16 @@ export function MediaGrid() {
             searchEnabled={searchEnabled}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSortKeyChange={setSortKey}
+            onSortDirToggle={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
             isAdmin={isAdmin}
-            itemsPerPage={ITEMS_PER_PAGE}
+            isSelected={selection.isSelected}
+            selectionMode={selection.selectionMode}
+            onItemClick={selection.handleClick}
+            onToggleSelect={selection.toggle}
+            onContextMenu={openMenu}
             onDragStart={handleMediaDragStart}
             onDragEnd={handleMediaDragEnd}
           />
@@ -278,6 +503,37 @@ export function MediaGrid() {
         onNavigate={(file) => setPreview((prev) => ({ media: file, trigger: prev.trigger }))}
         triggerElement={preview.trigger}
       />
+
+      <BatchMoveModal
+        open={batchMoveOpen}
+        count={selection.selectedCount}
+        hasFolder={selection.selectedItems.some((item) => item.isFolder)}
+        currentPrefix={currentPrefix}
+        maxDepth={MAX_FOLDER_DEPTH}
+        sanitizePath={sanitizePath}
+        getDepth={getDepth}
+        onCancel={() => setBatchMoveOpen(false)}
+        onConfirm={handleBatchMoveConfirm}
+      />
+
+      <ContextMenu open={menu.open} x={menu.x} y={menu.y} items={contextItems} onClose={closeMenu} />
+
+      <SelectionToolbar
+        count={selection.selectedCount}
+        onMove={() => setBatchMoveOpen(true)}
+        onDelete={() => void handleBatchDeleteClick()}
+        onClear={selection.clear}
+      />
+
+      <DropzoneOverlay
+        active={dropActive && isAdmin}
+        uploading={dropUploading}
+        progress={dropProgress}
+        targetLabel={currentPrefix || '根目錄'}
+      />
+
+      <PasswordPromptModal request={passwordReq} maxLength={MAX_ADMIN_TOKEN_LENGTH} onClose={closePassword} />
+      <ConfirmDialog request={confirmReq} onClose={closeConfirm} />
     </section>
   );
 }

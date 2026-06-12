@@ -8,23 +8,31 @@ import {
 
 type UseAdminAuthProps = {
   pushMessage: (text: string, tone: "info" | "success" | "error") => void;
+  openPassword: (opts: {
+    title?: string;
+    message?: string;
+    onSubmit: (value: string) => Promise<boolean>;
+  }) => Promise<boolean>;
 };
 
 /**
  * useAdminAuth Hook: 管理員權限控制
  * 包含：Token 驗證、Session 儲存、逾時自動登出、以及發送帶有 Auth Header 的請求
  */
-export function useAdminAuth({ pushMessage }: UseAdminAuthProps) {
+export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   const [adminToken, setAdminToken] = useState("");
   const [adminInput, setAdminInput] = useState("");
   const isAdmin = Boolean(adminToken);
   const adminTimeoutRef = useRef<number | null>(null);
+  // 同步保存最新 token，供非同步流程（如拖曳上傳）在 setState 尚未 flush 時讀取
+  const adminTokenRef = useRef("");
 
   // 清除管理員 Session (登出)
   const clearAdminSession = useCallback(
     (notice?: string) => {
       setAdminInput("");
       setAdminToken("");
+      adminTokenRef.current = "";
       if (typeof window !== "undefined") {
         sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
       }
@@ -123,6 +131,7 @@ export function useAdminAuth({ pushMessage }: UseAdminAuthProps) {
 
         setAdminToken(trimmed);
         setAdminInput(trimmed);
+        adminTokenRef.current = trimmed;
         sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed);
         resetAdminTimeout();
         pushMessage(options?.silent ? "" : "已啟用管理模式", "success");
@@ -138,21 +147,24 @@ export function useAdminAuth({ pushMessage }: UseAdminAuthProps) {
   );
 
   // 請求輸入管理員 Token (用於敏感操作前)
+  // 改用 App 內密碼對話框，驗證失敗時對話框會保持開啟讓使用者重試。
   const requestAdminToken = useCallback(
     async (promptMessage = "請輸入管理密碼以繼續"): Promise<boolean> => {
       if (!adminToken) {
-        const input = window.prompt(promptMessage, adminInput);
-        if (input === null) return false;
-
-        setAdminInput(input);
-        const isValid = await validateAndApplyToken(input);
-        if (!isValid) return false;
+        const ok = await openPassword({
+          message: promptMessage,
+          onSubmit: async (value) => {
+            setAdminInput(value);
+            return validateAndApplyToken(value);
+          },
+        });
+        if (!ok) return false;
       }
 
       resetAdminTimeout();
       return true;
     },
-    [adminToken, adminInput, validateAndApplyToken, resetAdminTimeout],
+    [adminToken, openPassword, validateAndApplyToken, resetAdminTimeout],
   );
 
   // 初始化檢查 Session Storage
@@ -168,7 +180,8 @@ export function useAdminAuth({ pushMessage }: UseAdminAuthProps) {
         void validateAndApplyToken(saved, { silent: true });
       });
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // 僅在掛載時檢查一次 sessionStorage
+  }, []);
 
   // 離開頁面時清除 Session (安全性考量)
   useEffect(() => {
@@ -194,6 +207,7 @@ export function useAdminAuth({ pushMessage }: UseAdminAuthProps) {
 
   return {
     adminToken,
+    adminTokenRef,
     adminInput,
     isAdmin,
     setAdminInput,

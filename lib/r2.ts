@@ -819,6 +819,44 @@ export async function moveFile(key: string, targetPrefix: string) {
   } satisfies MediaFile;
 }
 
+// 批次刪除多個項目（檔案與資料夾混合）
+// 會把所有選取資料夾底下的物件一次收集起來，連同選取檔案以單一批次刪除請求送出。
+export async function batchDelete(
+  items: { key: string; isFolder: boolean }[],
+) {
+  const keySet = new Set<string>();
+
+  for (const item of items) {
+    if (item.isFolder) {
+      const keys = await collectKeys(item.key, { includePrefixObject: true });
+      keys.forEach((key) => keySet.add(key));
+    } else {
+      keySet.add(normalizePath(item.key));
+    }
+  }
+
+  if (keySet.size === 0) return;
+
+  await deleteObjects([...keySet]);
+  clearUsageCache();
+}
+
+// 批次移動多個項目到同一個目標路徑
+// 依序處理以避免並行時的檔名衝突競態（移動內部已各自處理重名）。
+export async function batchMove(
+  items: { key: string; isFolder: boolean }[],
+  targetPrefix: string,
+) {
+  for (const item of items) {
+    if (item.isFolder) {
+      await moveFolder(item.key, targetPrefix);
+    } else {
+      await moveFile(item.key, targetPrefix);
+    }
+  }
+  clearUsageCache();
+}
+
 // 移動資料夾
 export async function moveFolder(key: string, targetPrefix: string) {
   const normalizedKey = normalizePath(key);

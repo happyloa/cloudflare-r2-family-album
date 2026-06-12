@@ -4,6 +4,8 @@ import { AdminActionTarget, AdminActionType } from "../AdminActionModal";
 import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "../constants";
 import { getDepth, sanitizeName } from "../sanitize";
 
+type BatchItem = { key: string; isFolder: boolean };
+
 type UseMediaActionsProps = {
   authorizedFetch: (
     input: RequestInfo | URL,
@@ -11,19 +13,26 @@ type UseMediaActionsProps = {
   ) => Promise<Response>;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
   pushMessage: (text: string, tone: "info" | "success" | "error") => void;
-  loadMedia: (prefix: string) => Promise<void>;
+  loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
+  removeLocalItems: (items: BatchItem[]) => void;
+  renameLocalItem: (key: string, isFolder: boolean, newName: string) => void;
   currentPrefix: string;
 };
 
+// R2 的 List 在寫入後可能有短暫延遲，操作後排程一次背景對帳以校正樂觀更新。
+const RECONCILE_DELAY_MS = 1500;
+
 /**
  * useMediaActions Hook: 媒體與資料夾操作邏輯
- * 包含：建立資料夾、重新命名、移動、刪除等需要管理員權限的操作
+ * 採樂觀更新：先即時調整本地清單，再於背景與伺服器對帳，操作失敗時自動還原。
  */
 export function useMediaActions({
   authorizedFetch,
   requestAdminToken,
   pushMessage,
   loadMedia,
+  removeLocalItems,
+  renameLocalItem,
   currentPrefix,
 }: UseMediaActionsProps) {
   const [newFolderName, setNewFolderName] = useState("");
@@ -31,6 +40,12 @@ export function useMediaActions({
     action: AdminActionType;
     target: AdminActionTarget;
   } | null>(null);
+
+  const scheduleReconcile = (prefix = currentPrefix) => {
+    window.setTimeout(() => {
+      void loadMedia(prefix, { silent: true });
+    }, RECONCILE_DELAY_MS);
+  };
 
   // 建立新資料夾
   const handleCreateFolder = async () => {
@@ -73,7 +88,7 @@ export function useMediaActions({
 
       setNewFolderName("");
       pushMessage("已建立新資料夾", "success");
-      await loadMedia(currentPrefix);
+      await loadMedia(currentPrefix, { silent: true });
     } catch {
       pushMessage("建立資料夾時發生錯誤，請稍後再試。", "error");
     }
@@ -107,6 +122,9 @@ export function useMediaActions({
     // 重新命名
     if (payload.action === "rename") {
       if (!payload.newName) return;
+      // 樂觀更新顯示名稱
+      renameLocalItem(payload.key, payload.isFolder, payload.newName);
+      setAdminAction(null);
       try {
         const response = await authorizedFetch("/api/media", {
           method: "PATCH",
@@ -121,26 +139,24 @@ export function useMediaActions({
 
         if (!response.ok) {
           pushMessage("重新命名失敗，請稍後再試", "error");
+          await loadMedia(currentPrefix, { silent: true });
           return;
         }
 
         pushMessage("已更新名稱", "success");
-        setAdminAction(null);
-
-        // R2 列表刪除有時存在延遲，先立即更新再延遲重新整理以避免舊名稱暫時出現
-        await loadMedia(currentPrefix);
-        window.setTimeout(() => {
-          void loadMedia(currentPrefix);
-        }, 1500);
+        scheduleReconcile();
       } catch {
         pushMessage("重新命名時發生錯誤，請稍後再試。", "error");
+        await loadMedia(currentPrefix, { silent: true });
       }
       return;
     }
 
-    // 移動
+    // 移動（項目離開目前資料夾，樂觀移除）
     if (payload.action === "move") {
       if (payload.targetPrefix === undefined) return;
+      removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
+      setAdminAction(null);
       try {
         const response = await authorizedFetch("/api/media", {
           method: "PATCH",
@@ -155,19 +171,22 @@ export function useMediaActions({
 
         if (!response.ok) {
           pushMessage("移動失敗，請稍後再試", "error");
+          await loadMedia(currentPrefix, { silent: true });
           return;
         }
 
         pushMessage("已移動完成", "success");
-        setAdminAction(null);
-        await loadMedia(payload.targetPrefix || currentPrefix);
+        scheduleReconcile();
       } catch {
         pushMessage("移動時發生錯誤，請稍後再試。", "error");
+        await loadMedia(currentPrefix, { silent: true });
       }
       return;
     }
 
-    // 刪除
+    // 刪除（樂觀移除）
+    removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
+    setAdminAction(null);
     try {
       const response = await authorizedFetch("/api/media", {
         method: "DELETE",
@@ -181,14 +200,61 @@ export function useMediaActions({
 
       if (!response.ok) {
         pushMessage("刪除失敗，請稍後再試", "error");
+        await loadMedia(currentPrefix, { silent: true });
         return;
       }
 
       pushMessage("已刪除", "success");
-      setAdminAction(null);
-      await loadMedia(currentPrefix);
+      scheduleReconcile();
     } catch {
       pushMessage("刪除時發生錯誤，請稍後再試。", "error");
+      await loadMedia(currentPrefix, { silent: true });
+    }
+  };
+
+  // 批次移動
+  const handleBatchMove = async (items: BatchItem[], targetPrefix: string) => {
+    if (items.length === 0) return;
+    removeLocalItems(items);
+    try {
+      const response = await authorizedFetch("/api/media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "batch-move", items, targetPrefix }),
+      });
+      if (!response.ok) {
+        pushMessage("批次移動失敗，請稍後再試", "error");
+        await loadMedia(currentPrefix, { silent: true });
+        return;
+      }
+      pushMessage(`已移動 ${items.length} 個項目`, "success");
+      scheduleReconcile();
+    } catch {
+      pushMessage("批次移動時發生錯誤，請稍後再試。", "error");
+      await loadMedia(currentPrefix, { silent: true });
+    }
+  };
+
+  // 批次刪除
+  const handleBatchDelete = async (items: BatchItem[]) => {
+    if (items.length === 0) return;
+    removeLocalItems(items);
+    try {
+      const response = await authorizedFetch("/api/media", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "batch-delete", items }),
+      });
+      if (!response.ok) {
+        pushMessage("批次刪除失敗，請稍後再試", "error");
+        await loadMedia(currentPrefix, { silent: true });
+        return;
+      }
+      pushMessage(`已刪除 ${items.length} 個項目`, "success");
+      scheduleReconcile();
+    } catch {
+      pushMessage("批次刪除時發生錯誤，請稍後再試。", "error");
+      await loadMedia(currentPrefix, { silent: true });
     }
   };
 
@@ -200,5 +266,7 @@ export function useMediaActions({
     setAdminAction,
     openAdminActionModal,
     handleAdminActionConfirm,
+    handleBatchMove,
+    handleBatchDelete,
   };
 }
