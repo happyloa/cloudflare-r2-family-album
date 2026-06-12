@@ -35,7 +35,6 @@ export function useMediaActions({
   renameLocalItem,
   currentPrefix,
 }: UseMediaActionsProps) {
-  const [newFolderName, setNewFolderName] = useState("");
   const [adminAction, setAdminAction] = useState<{
     action: AdminActionType;
     target: AdminActionTarget;
@@ -47,27 +46,27 @@ export function useMediaActions({
     }, RECONCILE_DELAY_MS);
   };
 
-  // 建立新資料夾
-  const handleCreateFolder = async () => {
+  // 建立新資料夾（回傳是否成功，供對話框決定是否關閉）
+  const handleCreateFolder = async (name: string): Promise<boolean> => {
     const allowed = await requestAdminToken("請輸入管理密碼以建立資料夾");
-    if (!allowed) return;
+    if (!allowed) return false;
 
-    const safeName = sanitizeName(newFolderName);
+    const safeName = sanitizeName(name);
 
     if (!safeName) {
       pushMessage("請輸入資料夾名稱", "error");
-      return;
+      return false;
     }
 
     if (safeName.length > MAX_FOLDER_NAME_LENGTH) {
       pushMessage("資料夾名稱最多 30 個字", "error");
-      return;
+      return false;
     }
 
     const nextDepth = getDepth(currentPrefix) + 1;
     if (nextDepth > MAX_FOLDER_DEPTH) {
       pushMessage("資料夾層數最多兩層，無法在此建立新資料夾", "error");
-      return;
+      return false;
     }
 
     try {
@@ -83,14 +82,15 @@ export function useMediaActions({
 
       if (!response.ok) {
         pushMessage("建立資料夾失敗", "error");
-        return;
+        return false;
       }
 
-      setNewFolderName("");
       pushMessage("已建立新資料夾", "success");
       await loadMedia(currentPrefix, { silent: true });
+      return true;
     } catch {
       pushMessage("建立資料夾時發生錯誤，請稍後再試。", "error");
+      return false;
     }
   };
 
@@ -259,8 +259,6 @@ export function useMediaActions({
   };
 
   return {
-    newFolderName,
-    setNewFolderName,
     handleCreateFolder,
     adminAction,
     setAdminAction,

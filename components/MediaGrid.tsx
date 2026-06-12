@@ -5,20 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { uploadFiles } from '@/lib/upload/client';
 import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
-import { AdminAccessPanel } from './media/AdminAccessPanel';
 import { AdminActionModal } from './media/AdminActionModal';
 import { BatchMoveModal } from './media/BatchMoveModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
 import { ConfirmDialog } from './media/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from './media/ContextMenu';
-import {
-  MAX_ADMIN_TOKEN_LENGTH,
-  MAX_FOLDER_DEPTH,
-  MAX_FOLDER_NAME_LENGTH
-} from './media/constants';
+import { MAX_ADMIN_TOKEN_LENGTH, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from './media/constants';
 import { DropzoneOverlay } from './media/DropzoneOverlay';
 import { EmptyState } from './media/EmptyState';
-import { FolderCreator } from './media/FolderCreator';
 import { FolderGrid } from './media/FolderGrid';
 import { useAdminAuth } from './media/hooks/useAdminAuth';
 import { useBucketUsage } from './media/hooks/useBucketUsage';
@@ -33,13 +27,16 @@ import { MediaPreviewModal } from './media/MediaPreviewModal';
 import { MediaSection } from './media/MediaSection';
 import { MediaSkeleton } from './media/MediaSkeleton';
 import { MessageToast } from './media/MessageToast';
+import { NewFolderModal } from './media/NewFolderModal';
 import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
 import { getDepth, sanitizeName, sanitizePath } from './media/sanitize';
 import { MediaFile } from './media/types';
-import { UploadForm } from './UploadForm';
+import { UsageBar } from './media/UsageBar';
 
 type Breadcrumb = { label: string; key: string };
+
+const BUCKET_LIMIT_BYTES = 10 * 1024 * 1024 * 1024; // 10GB
 
 type PreviewState = {
   media: MediaFile | null;
@@ -82,20 +79,14 @@ export function MediaGrid() {
   const usage = useBucketUsage();
 
   const {
-    adminToken,
     adminTokenRef,
-    adminInput,
     isAdmin,
-    setAdminInput,
-    validateAndApplyToken,
     clearAdminSession,
     requestAdminToken,
     authorizedFetch
   } = useAdminAuth({ pushMessage, openPassword });
 
   const {
-    newFolderName,
-    setNewFolderName,
     handleCreateFolder,
     adminAction,
     setAdminAction,
@@ -134,6 +125,9 @@ export function MediaGrid() {
 
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
   const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // 切換資料夾時清除選取（僅依路徑變動觸發）
   useEffect(() => {
@@ -171,12 +165,23 @@ export function MediaGrid() {
     setCurrentPrefix(parts.join('/'));
   };
 
-  const handleSaveAdminToken = () => {
-    void validateAndApplyToken(adminInput);
+  const handleEnableAdmin = () => {
+    void requestAdminToken('請輸入管理密碼以啟用管理模式');
   };
 
   const handleClearAdminToken = () => {
+    selection.clear();
     clearAdminSession('已退出管理模式');
+  };
+
+  // ＋ 新增選單：上傳檔案（觸發隱藏 input）/ 建立資料夾
+  const handlePickUpload = () => {
+    setNewMenuOpen(false);
+    uploadInputRef.current?.click();
+  };
+  const handleCreateFolderMenu = () => {
+    setNewMenuOpen(false);
+    setNewFolderOpen(true);
   };
 
   // ── 拖曳檔案到頁面上傳 ──
@@ -209,6 +214,17 @@ export function MediaGrid() {
         return;
       }
 
+      const overLimit = usage.usageBytes !== null && usage.usageBytes > BUCKET_LIMIT_BYTES;
+      if (overLimit) {
+        const ok = await confirm({
+          title: '容量已超過上限',
+          message: '目前貯體容量已超過 10GB，確定仍要上傳嗎？',
+          confirmLabel: '仍要上傳',
+          danger: true
+        });
+        if (!ok) return;
+      }
+
       const allowed = await requestAdminToken('請輸入管理密碼以上傳');
       if (!allowed) return;
 
@@ -237,7 +253,7 @@ export function MediaGrid() {
         setDropUploading(false);
       }
     },
-    [requestAdminToken, currentPrefix, adminTokenRef, pushMessage, loadMedia, usage]
+    [requestAdminToken, currentPrefix, adminTokenRef, pushMessage, loadMedia, usage, confirm]
   );
 
   useEffect(() => {
@@ -394,54 +410,100 @@ export function MediaGrid() {
     <section className="relative space-y-6">
       <MessageToast message={message} tone={messageTone} />
 
-      {/* 控制面板 */}
-      <div className="glass-card rounded-3xl border border-surface-700/50 bg-surface-900/80 p-6 shadow-xl ring-1 ring-white/5 sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
-              <p className="text-sm font-semibold text-primary-400">R2 即時同步</p>
-            </div>
-            <h2 className="text-2xl font-bold text-white">媒體控制台</h2>
-            <p className="text-sm leading-relaxed text-surface-400">
-              快速檢視路徑、啟用安全管理密碼，並在需要時開啟管理模式處理上傳與編輯。管理模式下可框選、右鍵操作，或將檔案直接拖入頁面上傳。
-            </p>
-          </div>
+      {/* 工具列 */}
+      <div className="glass-card flex flex-col gap-4 rounded-3xl border border-surface-700/50 bg-surface-900/80 p-4 shadow-xl ring-1 ring-white/5 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex items-center gap-2.5">
+          <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+          <h2 className="text-lg font-bold text-white">媒體控制台</h2>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+              isAdmin
+                ? 'bg-primary-500/15 text-primary-200 ring-primary-500/40'
+                : 'bg-surface-800 text-surface-300 ring-surface-600'
+            }`}
+          >
+            {isAdmin ? '管理模式' : '唯讀'}
+          </span>
         </div>
 
-        <div className="mt-6">
-          <AdminAccessPanel
-            isAdmin={isAdmin}
-            adminInput={adminInput}
-            maxLength={MAX_ADMIN_TOKEN_LENGTH}
-            onValidate={handleSaveAdminToken}
-            onClear={handleClearAdminToken}
-            onInputChange={setAdminInput}
-          />
-        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <UsageBar usageBytes={usage.usageBytes} loading={usage.loading} error={usage.error} />
 
-        {isAdmin ? (
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <FolderCreator
-              value={newFolderName}
-              onChange={(value) => setNewFolderName(sanitizeName(value))}
-              onSubmit={handleCreateFolder}
-            />
-            <UploadForm
-              adminToken={adminToken}
-              currentPath={currentPrefix}
-              onUploaded={() => {
-                void loadMedia(currentPrefix, { silent: true });
-                void usage.refresh(true);
-              }}
-              usageBytes={usage.usageBytes}
-              usageLoading={usage.loading}
-              usageError={usage.error}
-              confirm={confirm}
-            />
-          </div>
-        ) : null}
+          {isAdmin ? (
+            <>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setNewMenuOpen((value) => !value)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-primary-500 cursor-pointer"
+                  aria-haspopup="menu"
+                  aria-expanded={newMenuOpen}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                  </svg>
+                  新增
+                </button>
+                {newMenuOpen ? (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setNewMenuOpen(false)} aria-hidden />
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-surface-700/70 bg-surface-900/95 py-1.5 shadow-2xl ring-1 ring-white/5 backdrop-blur-md animate-modal-content-in"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handlePickUpload}
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 cursor-pointer"
+                      >
+                        <span className="w-5 text-center text-base leading-none">⬆️</span>上傳檔案
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={handleCreateFolderMenu}
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 cursor-pointer"
+                      >
+                        <span className="w-5 text-center text-base leading-none">📁</span>建立資料夾
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={handleClearAdminToken}
+                className="rounded-xl border border-surface-700 px-3 py-2 text-sm font-semibold text-surface-200 transition-all duration-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+              >
+                退出管理
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={handleEnableAdmin}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-primary-500 cursor-pointer"
+            >
+              🔓 啟用管理模式
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* 隱藏的上傳檔案 input（＋ 新增 → 上傳檔案） */}
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept="image/*,video/*"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const list = Array.from(event.target.files ?? []);
+          event.target.value = '';
+          if (list.length) void handleDroppedFiles(list);
+        }}
+      />
 
       <BreadcrumbNav
         breadcrumbTrail={breadcrumbTrail}
@@ -565,6 +627,15 @@ export function MediaGrid() {
         getDepth={getDepth}
         onCancel={() => setBatchMoveOpen(false)}
         onConfirm={handleBatchMoveConfirm}
+      />
+
+      <NewFolderModal
+        open={newFolderOpen}
+        onCancel={() => setNewFolderOpen(false)}
+        onConfirm={async (name) => {
+          const ok = await handleCreateFolder(name);
+          if (ok) setNewFolderOpen(false);
+        }}
       />
 
       <ContextMenu open={menu.open} x={menu.x} y={menu.y} items={contextItems} onClose={closeMenu} />
