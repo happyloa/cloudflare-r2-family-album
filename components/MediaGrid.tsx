@@ -345,6 +345,48 @@ export function MediaGrid() {
     await handleBatchMove(items, targetPrefix);
   };
 
+  // ── 鍵盤快捷鍵：Ctrl/Cmd+A 全選、Esc 清除、Delete 刪除所選 ──
+  const anyModalOpen =
+    Boolean(preview.media) ||
+    Boolean(adminAction) ||
+    batchMoveOpen ||
+    Boolean(passwordReq) ||
+    Boolean(confirmReq);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (anyModalOpen || !isAdmin) return;
+
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'a' || event.key === 'A')) {
+        if (folders.length || visibleFiles.length) {
+          event.preventDefault();
+          selection.selectAll();
+        }
+        return;
+      }
+      if (event.key === 'Escape' && selection.selectionMode) {
+        selection.clear();
+        return;
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selection.selectionMode) {
+        event.preventDefault();
+        void handleBatchDeleteClick();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [anyModalOpen, isAdmin, selection, folders.length, visibleFiles.length, handleBatchDeleteClick]);
+
   const hasItems = files.length > 0 || folders.length > 0;
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
 

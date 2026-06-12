@@ -3,6 +3,7 @@
 import { type DragEvent, type MouseEvent, useState } from 'react';
 
 import { ContextTarget } from './hooks/useContextMenu';
+import { useLongPress } from './hooks/useLongPress';
 import { makeSelectionId, SelectionId } from './hooks/useSelection';
 import { FolderItem } from './types';
 
@@ -32,6 +33,7 @@ export function FolderGrid({
   onContextMenu: (event: { clientX: number; clientY: number; preventDefault: () => void }, target: ContextTarget) => void;
 }) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const longPress = useLongPress((id) => onToggleSelect(id));
 
   if (!folders.length) return null;
 
@@ -44,6 +46,7 @@ export function FolderGrid({
   };
 
   const handleCardClick = (folder: FolderItem, event: MouseEvent<HTMLElement>) => {
+    if (longPress.consumeClick()) return;
     const id = makeSelectionId(folder.key, true);
     if (isAdmin && (event.shiftKey || event.ctrlKey || event.metaKey)) {
       onItemClick(id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
@@ -88,6 +91,10 @@ export function FolderGrid({
                 if (!isAdmin) return;
                 onContextMenu(event, { key: folder.key, isFolder: true });
               }}
+              onTouchStart={isAdmin ? () => longPress.start(id) : undefined}
+              onTouchMove={longPress.cancel}
+              onTouchEnd={longPress.cancel}
+              onTouchCancel={longPress.cancel}
               onDragOver={(event) => {
                 if (!canDropMedia) return;
                 event.preventDefault();
@@ -118,7 +125,7 @@ export function FolderGrid({
                   className={`absolute left-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer ${
                     selected
                       ? 'border-primary-400 bg-primary-500 text-surface-950'
-                      : 'border-white/70 bg-surface-900/60 text-transparent opacity-0 group-hover:opacity-100'
+                      : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
                   }`}
                   aria-label={selected ? '取消選取' : '選取'}
                   aria-pressed={selected}

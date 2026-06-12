@@ -3,6 +3,7 @@
 import { type DragEvent, type MouseEvent, useEffect, useRef } from 'react';
 
 import { ContextTarget } from './hooks/useContextMenu';
+import { useLongPress } from './hooks/useLongPress';
 import { makeSelectionId, SelectionId } from './hooks/useSelection';
 import type { SortDir, SortKey } from './hooks/useMediaData';
 import { MediaThumbnail } from './MediaThumbnail';
@@ -70,6 +71,7 @@ export function MediaSection({
   onDragEnd?: () => void;
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const longPress = useLongPress((id) => onToggleSelect(id));
 
   // 無限捲動：sentinel 進入視窗時載入下一批
   useEffect(() => {
@@ -108,6 +110,7 @@ export function MediaSection({
   };
 
   const handleCardClick = (item: MediaFile, event: MouseEvent<HTMLElement>) => {
+    if (longPress.consumeClick()) return;
     const id = makeSelectionId(item.key, false);
     if (isAdmin && (event.shiftKey || event.ctrlKey || event.metaKey)) {
       onItemClick(id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
@@ -222,6 +225,10 @@ export function MediaSection({
                 if (!isAdmin) return;
                 onContextMenu(event, { key: item.key, isFolder: false });
               }}
+              onTouchStart={isAdmin ? () => longPress.start(id) : undefined}
+              onTouchMove={longPress.cancel}
+              onTouchEnd={longPress.cancel}
+              onTouchCancel={longPress.cancel}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -253,7 +260,7 @@ export function MediaSection({
                   className={`absolute left-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer ${
                     selected
                       ? 'border-primary-400 bg-primary-500 text-surface-950'
-                      : 'border-white/70 bg-surface-900/60 text-transparent opacity-0 group-hover:opacity-100'
+                      : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
                   }`}
                   aria-label={selected ? '取消選取' : '選取'}
                   aria-pressed={selected}
