@@ -13,8 +13,10 @@ export function FolderGrid({
   folders,
   isAdmin,
   onEnter,
-  canDropMedia,
-  onDropMedia,
+  isDragging,
+  onDropItem,
+  onItemDragStart,
+  onItemDragEnd,
   isSelected,
   selectionMode,
   onItemClick,
@@ -24,8 +26,10 @@ export function FolderGrid({
   folders: FolderItem[];
   isAdmin: boolean;
   onEnter: (key: string) => void;
-  canDropMedia?: boolean;
-  onDropMedia?: (folderKey: string) => void;
+  isDragging?: boolean;
+  onDropItem?: (folderKey: string) => void;
+  onItemDragStart?: (folderKey: string, event: DragEvent<HTMLElement>) => void;
+  onItemDragEnd?: () => void;
   isSelected: (id: SelectionId) => boolean;
   selectionMode: boolean;
   onItemClick: (id: SelectionId, modifiers: ItemModifiers) => void;
@@ -38,11 +42,11 @@ export function FolderGrid({
   if (!folders.length) return null;
 
   const handleDrop = (event: DragEvent<HTMLElement>, folderKey: string) => {
-    if (!canDropMedia) return;
+    if (!isDragging) return;
     event.preventDefault();
     event.stopPropagation();
     setDropTarget(null);
-    onDropMedia?.(folderKey);
+    onDropItem?.(folderKey);
   };
 
   const handleCardClick = (folder: FolderItem, event: MouseEvent<HTMLElement>) => {
@@ -86,6 +90,7 @@ export function FolderGrid({
               }`}
               role="button"
               tabIndex={0}
+              draggable={isAdmin}
               onClick={(event) => handleCardClick(folder, event)}
               onContextMenu={(event) => {
                 if (!isAdmin) return;
@@ -95,8 +100,16 @@ export function FolderGrid({
               onTouchMove={longPress.cancel}
               onTouchEnd={longPress.cancel}
               onTouchCancel={longPress.cancel}
+              onDragStart={(event) => {
+                if (!isAdmin) return;
+                event.stopPropagation();
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', folder.key);
+                onItemDragStart?.(folder.key, event);
+              }}
+              onDragEnd={() => onItemDragEnd?.()}
               onDragOver={(event) => {
-                if (!canDropMedia) return;
+                if (!isDragging) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 if (dropTarget !== folder.key) setDropTarget(folder.key);
@@ -112,7 +125,7 @@ export function FolderGrid({
                   else onEnter(folder.key);
                 }
               }}
-              aria-label={canDropMedia ? `將媒體移動到 ${folder.name} 資料夾` : folder.name || '資料夾'}
+              aria-label={isDragging ? `將項目移動到 ${folder.name} 資料夾` : folder.name || '資料夾'}
             >
               {/* 選取核取方塊 */}
               {isAdmin ? (

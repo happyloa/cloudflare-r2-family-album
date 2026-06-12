@@ -104,7 +104,7 @@ export function MediaGrid() {
     currentPrefix
   });
 
-  const { isDraggingMedia, handleMediaDragStart, handleMediaDragEnd, moveDraggedMediaTo } = useMediaDragDrop({
+  const { isDragging, handleItemDragStart, handleItemDragEnd, moveDraggedItemTo } = useMediaDragDrop({
     isAdmin,
     currentPrefix,
     requestAdminToken,
@@ -518,7 +518,7 @@ export function MediaGrid() {
         depth={depth}
       />
 
-      {isAdmin && isDraggingMedia && parentPrefix !== null ? (
+      {isAdmin && isDragging && parentPrefix !== null ? (
         <div
           className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-primary-400/60 bg-primary-500/10 px-4 py-3 text-primary-50"
           onDragOver={(event) => {
@@ -527,16 +527,16 @@ export function MediaGrid() {
           }}
           onDrop={(event) => {
             event.preventDefault();
-            void moveDraggedMediaTo(parentPrefix);
+            void moveDraggedItemTo(parentPrefix);
           }}
           role="button"
-          aria-label="將媒體放到上一層"
+          aria-label="將項目放到上一層"
         >
           <div className="flex items-center gap-2 text-sm font-semibold">
             <span className="text-lg">⬆️</span>
             <span>放到上一層</span>
           </div>
-          <p className="text-xs text-primary-100/80">將拖曳中的媒體移動到「{parentPrefix || '根目錄'}」</p>
+          <p className="text-xs text-primary-100/80">將拖曳中的項目移動到「{parentPrefix || '根目錄'}」</p>
         </div>
       ) : null}
 
@@ -550,8 +550,16 @@ export function MediaGrid() {
             folders={folders}
             isAdmin={isAdmin}
             onEnter={handleEnterFolder}
-            canDropMedia={isAdmin ? isDraggingMedia : false}
-            onDropMedia={(targetKey) => void moveDraggedMediaTo(targetKey)}
+            isDragging={isAdmin ? isDragging : false}
+            onDropItem={(targetKey) => void moveDraggedItemTo(targetKey)}
+            onItemDragStart={(folderKey, event) => {
+              internalDragRef.current = true;
+              handleItemDragStart({ key: folderKey, isFolder: true }, event);
+            }}
+            onItemDragEnd={() => {
+              internalDragRef.current = false;
+              handleItemDragEnd();
+            }}
             isSelected={selection.isSelected}
             selectionMode={selection.selectionMode}
             onItemClick={selection.handleClick}
@@ -585,11 +593,11 @@ export function MediaGrid() {
             onContextMenu={openMenu}
             onDragStart={(file, event) => {
               internalDragRef.current = true;
-              handleMediaDragStart(file, event);
+              handleItemDragStart({ key: file.key, isFolder: false }, event);
             }}
             onDragEnd={() => {
               internalDragRef.current = false;
-              handleMediaDragEnd();
+              handleItemDragEnd();
             }}
           />
         </>
