@@ -427,22 +427,69 @@ export async function moveFolder(key: string, targetPrefix: string) {
 
 // ── 批次 ──
 
-// 批次刪除多個項目（檔案與資料夾混合）：收集所有 key 後以單一批次請求刪除
+// 解包資料夾：把整個子樹「上移一層」到父層（保留子資料夾結構、含重名自動編號），
+// 再移除原本的資料夾與其標記。內容不會被刪除，較安全。
+export async function dissolveFolder(folderKey: string) {
+  const normalizedKey = normalizePath(folderKey);
+  const parent = normalizedKey.split("/").slice(0, -1).join("/");
+
+  const sourcePrefix = buildFolderKey(normalizedKey); // 例如 "trip/"
+  const targetPrefixKey = buildFolderKey(sanitizePath(parent)); // 父層 "" 或 "2024/"
+
+  const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
+  if (keys.length === 0) return;
+
+  // 以父層既有檔名為基準做衝突改名
+  const existingNamesByFolder = await listExistingFileNamesByFolder(parent);
+
+  const copyTasks: { sourceKey: string; targetKey: string }[] = [];
+  for (const sourceKey of keys) {
+    // 把 "trip/..." 換成父層前綴："trip/sub/x.jpg" → "sub/x.jpg"（root）或 "2024/sub/x.jpg"
+    const mappedKey = sourceKey.replace(sourcePrefix, targetPrefixKey);
+
+    if (sourceKey.endsWith("/")) {
+      // 資料夾標記：原資料夾本身映射到父層（root 時為空字串）→ 跳過；子資料夾標記照搬保留
+      if (mappedKey) copyTasks.push({ sourceKey, targetKey: mappedKey });
+      continue;
+    }
+
+    const segments = mappedKey.split("/");
+    const fileName = segments.pop();
+    if (!fileName) continue;
+    const targetFolder = segments.join("/");
+    const existingNames = existingNamesByFolder.get(targetFolder) ?? new Set<string>();
+    const resolvedName = buildUniqueFileNameForConflict(fileName, existingNames);
+    existingNames.add(resolvedName);
+    existingNamesByFolder.set(targetFolder, existingNames);
+    copyTasks.push({
+      sourceKey,
+      targetKey: targetFolder ? `${targetFolder}/${resolvedName}` : resolvedName,
+    });
+  }
+
+  await Promise.all(
+    copyTasks.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey)),
+  );
+
+  await deleteObjects(keys);
+}
+
+// 批次刪除：檔案直接刪除；資料夾則「解包」內容到上一層後移除（較安全、可搭配 Undo）
 export async function batchDelete(items: { key: string; isFolder: boolean }[]) {
-  const keySet = new Set<string>();
+  const fileKeys = new Set<string>();
 
   for (const item of items) {
     if (item.isFolder) {
-      const keys = await collectKeys(item.key, { includePrefixObject: true });
-      keys.forEach((key) => keySet.add(key));
+      await dissolveFolder(item.key);
     } else {
-      keySet.add(normalizePath(item.key));
+      fileKeys.add(normalizePath(item.key));
     }
   }
 
-  if (keySet.size === 0) return;
+  if (fileKeys.size > 0) {
+    await deleteObjects([...fileKeys]);
+  }
 
-  await deleteObjects([...keySet]);
   clearUsageCache();
 }
 

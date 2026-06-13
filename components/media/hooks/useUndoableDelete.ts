@@ -86,15 +86,24 @@ export function useUndoableDelete({
     if (items.length === 0) return;
     const allowed = await requestAdminToken('請輸入管理密碼以刪除項目');
     if (!allowed) return;
-    if (items.some((item) => item.isFolder)) {
-      const ok = await confirm({
-        title: '刪除項目',
-        message: `確定刪除選取的 ${items.length} 個項目？資料夾會連同內容一併刪除（可在數秒內復原）。`,
-        confirmLabel: '刪除',
-        danger: true
-      });
-      if (!ok) return;
-    }
+
+    // 資料夾採「解包」：內容移到上一層、不會被刪除；只有檔案是真的刪除
+    const hasFolder = items.some((item) => item.isFolder);
+    const hasFile = items.some((item) => !item.isFolder);
+    const message =
+      hasFolder && hasFile
+        ? '將刪除選取的檔案，並把資料夾解包（內容移到上一層、不會刪除）。可在數秒內復原。'
+        : hasFolder
+          ? '將移除資料夾，裡面的內容會移到上一層（不會被刪除）。可在數秒內復原。'
+          : `確定刪除選取的 ${items.length} 個檔案？可在數秒內復原。`;
+    const ok = await confirm({
+      title: '刪除項目',
+      message,
+      confirmLabel: '確定',
+      danger: hasFile
+    });
+    if (!ok) return;
+
     startUndoableDelete(items);
   };
 
