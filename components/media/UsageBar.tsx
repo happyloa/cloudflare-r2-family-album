@@ -37,7 +37,7 @@ export function UsageBar({
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-800">
         <div
           className={`h-full rounded-full transition-all duration-300 ${
-            overLimit ? 'bg-gradient-to-r from-red-500 to-teal-500' : 'bg-gradient-to-r from-primary-500 to-teal-500'
+            overLimit ? 'bg-gradient-to-r from-red-500 to-accent-500' : 'bg-gradient-to-r from-primary-500 to-accent-500'
           }`}
           style={{ width: `${percent}%` }}
         />

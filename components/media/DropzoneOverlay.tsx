@@ -24,7 +24,7 @@ export function DropzoneOverlay({
             <p className="text-lg font-semibold text-white">上傳中… {progress}%</p>
             <div className="h-2 overflow-hidden rounded-full bg-surface-800">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-primary-500 to-teal-500 transition-[width] duration-200"
+                className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-[width] duration-200"
                 style={{ width: `${progress}%` }}
               />
             </div>

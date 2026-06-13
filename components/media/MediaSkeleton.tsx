@@ -14,13 +14,13 @@ export function MediaSkeleton() {
       <div className="space-y-3">
         <div className="flex items-center gap-3">
           <div className="skeleton-shimmer h-6 w-24 rounded" />
-          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-cyan-700/20" />
+          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-primary-700/20" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {folderPlaceholders.map((_, index) => (
             <div
               key={`folder-skeleton-${index}`}
-              className="flex flex-col gap-3 rounded-2xl border border-slate-700/50 bg-slate-800/50 p-4 shadow-lg"
+              className="flex flex-col gap-3 rounded-2xl border border-surface-700/50 bg-surface-800/50 p-4 shadow-lg"
               style={{ animationDelay: `${index * 100}ms` }}
             >
               <div className="flex items-center gap-3">
@@ -43,14 +43,14 @@ export function MediaSkeleton() {
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="skeleton-shimmer h-6 w-24 rounded" />
-          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-cyan-700/20" />
+          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-primary-700/20" />
           <div className="skeleton-shimmer ml-auto h-8 w-24 rounded-lg" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {mediaPlaceholders.map((_, index) => (
             <div
               key={`media-skeleton-${index}`}
-              className="flex flex-col overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-800/50 shadow-lg"
+              className="flex flex-col overflow-hidden rounded-2xl border border-surface-700/50 bg-surface-800/50 shadow-lg"
               style={{ animationDelay: `${(index + 3) * 80}ms` }}
             >
               <div className="skeleton-shimmer aspect-[4/3] w-full" />

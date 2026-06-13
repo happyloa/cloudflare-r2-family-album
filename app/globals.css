@@ -1,18 +1,24 @@
 @import "tailwindcss";
 
-/* Tailwind CSS 4 - CSS-based 主題配置 */
+/* Tailwind CSS 4 — CSS-first 主題設定（@theme 即官方建議的設定方式，無需 tailwind.config） */
 @theme {
-  /* 語意化顏色變數 - 青藍色主色調 (Cyan) */
-  --color-primary-50: #ecfeff;
-  --color-primary-100: #cffafe;
-  --color-primary-200: #a5f3fc;
-  --color-primary-300: #67e8f9;
-  --color-primary-400: #22d3ee;
-  --color-primary-500: #06b6d4;
-  --color-primary-600: #0891b2;
-  --color-primary-700: #0e7490;
+  /* 主色：靛藍 Indigo —— 現代、對比好、深色底好讀 */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
 
-  /* 表面顏色 - 深藍灰 (Slate) */
+  /* 輔色：紫羅蘭 Violet —— 主要用於漸層的第二個顏色 */
+  --color-accent-300: #c4b5fd;
+  --color-accent-400: #a78bfa;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+
+  /* 表面：深中性藍灰（淺色端供文字，深色端供背景與層次） */
   --color-surface-50: #f8fafc;
   --color-surface-100: #f1f5f9;
   --color-surface-200: #e2e8f0;
@@ -21,15 +27,15 @@
   --color-surface-500: #64748b;
   --color-surface-600: #475569;
   --color-surface-700: #334155;
-  --color-surface-800: #1e293b;
-  --color-surface-900: #0f172a;
-  --color-surface-950: #020617;
+  --color-surface-800: #1c2435;
+  --color-surface-900: #121826;
+  --color-surface-950: #0a0e17;
 
-  /* 自訂陰影 - 青色光暈 */
+  /* 自訂陰影 — 靛藍光暈 */
   --shadow-glow:
-    0 8px 32px rgba(6, 182, 212, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 8px 32px rgba(99, 102, 241, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --shadow-glow-lg:
-    0 12px 48px rgba(6, 182, 212, 0.25), 0 0 0 1px rgba(6, 182, 212, 0.1);
+    0 12px 48px rgba(99, 102, 241, 0.28), 0 0 0 1px rgba(99, 102, 241, 0.12);
 
   /* 自訂動畫 */
   --animate-fade-in: fade-in 0.3s ease-out;
@@ -103,21 +109,21 @@ body.modal-open {
 
 body {
   margin: 0;
-  background-color: #020617;
+  background-color: #0a0e17;
   background-image:
     radial-gradient(
       ellipse at 0% 0%,
-      color-mix(in srgb, #22d3ee 6%, transparent) 0,
+      color-mix(in srgb, #6366f1 7%, transparent) 0,
       transparent 50%
     ),
     radial-gradient(
       ellipse at 100% 0%,
-      color-mix(in srgb, #06b6d4 4%, transparent) 0,
-      transparent 40%
+      color-mix(in srgb, #8b5cf6 5%, transparent) 0,
+      transparent 42%
     ),
     radial-gradient(
       ellipse at 50% 100%,
-      color-mix(in srgb, #0e7490 5%, transparent) 0,
+      color-mix(in srgb, #4f46e5 5%, transparent) 0,
       transparent 50%
     );
 }
@@ -127,15 +133,15 @@ body {
   backdrop-filter: blur(12px) saturate(1.2);
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, #1e293b 95%, transparent) 0%,
-    color-mix(in srgb, #0f172a 88%, transparent) 50%,
-    color-mix(in srgb, #1e293b 92%, transparent) 100%
+    color-mix(in srgb, #1c2435 92%, transparent) 0%,
+    color-mix(in srgb, #121826 88%, transparent) 50%,
+    color-mix(in srgb, #1c2435 90%, transparent) 100%
   );
-  border: 1px solid color-mix(in srgb, #06b6d4 15%, transparent);
+  border: 1px solid color-mix(in srgb, #6366f1 16%, transparent);
   box-shadow:
-    0 24px 64px -12px rgba(0, 0, 0, 0.5),
-    0 0 0 1px color-mix(in srgb, #22d3ee 8%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    0 24px 64px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px color-mix(in srgb, #818cf8 8%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* 自訂捲軸 */
@@ -145,22 +151,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #121826;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #0891b2 0%, #0e7490 100%);
+  background: linear-gradient(180deg, #4f46e5 0%, #4338ca 100%);
   border-radius: 4px;
-  border: 2px solid #0f172a;
+  border: 2px solid #121826;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #06b6d4 0%, #0891b2 100%);
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
 }
 
 /* 選取文字顏色 */
 ::selection {
-  background: color-mix(in srgb, #22d3ee 30%, transparent);
-  color: #cffafe;
+  background: color-mix(in srgb, #818cf8 32%, transparent);
+  color: #e0e7ff;
 }

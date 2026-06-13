@@ -190,30 +190,30 @@ export function AdminActionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center bg-slate-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
+      className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center bg-surface-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-[min(560px,92vw)] overflow-hidden rounded-3xl border border-slate-700/50 bg-slate-900/95 shadow-2xl animate-modal-content-in"
+        className="w-[min(560px,92vw)] overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-slate-800 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-cyan-400">管理操作</p>
+        <div className="border-b border-surface-800 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-400">管理操作</p>
           <h3 className="mt-2 text-lg font-semibold text-white">{ACTION_TITLE[action]}</h3>
-          <p className="mt-1 text-sm text-slate-400">對象：{currentName || target.key}</p>
+          <p className="mt-1 text-sm text-surface-400">對象：{currentName || target.key}</p>
         </div>
 
         <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           {action === 'rename' && (
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-200" htmlFor="rename-input">
+              <label className="text-sm font-medium text-surface-200" htmlFor="rename-input">
                 新名稱
               </label>
               <input
                 id="rename-input"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none transition-all duration-200 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/30"
+                className="w-full rounded-2xl border border-surface-700 bg-surface-900/80 px-4 py-3 text-sm text-surface-100 outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
                 inputMode="text"
                 autoComplete="off"
                 autoCapitalize="none"
@@ -222,23 +222,23 @@ export function AdminActionModal({
                 onChange={(event) => setInputValue(event.target.value)}
                 placeholder="輸入新的檔案或資料夾名稱（支援表情符號）"
               />
-              {finalName ? <p className="text-xs text-slate-500">完成後名稱：{finalName}</p> : null}
+              {finalName ? <p className="text-xs text-surface-500">完成後名稱：{finalName}</p> : null}
             </div>
           )}
 
           {action === 'move' && (
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-200" htmlFor="move-input">
+              <label className="text-sm font-medium text-surface-200" htmlFor="move-input">
                 目標路徑
               </label>
               <input
                 id="move-input"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none transition-all duration-200 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/30"
+                className="w-full rounded-2xl border border-surface-700 bg-surface-900/80 px-4 py-3 text-sm text-surface-100 outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 placeholder="例如 albums/2024"
               />
-              <p className="text-xs text-slate-500">整理後路徑：{sanitizedPath || '根目錄'}</p>
+              <p className="text-xs text-surface-500">整理後路徑：{sanitizedPath || '根目錄'}</p>
             </div>
           )}
 
@@ -248,7 +248,7 @@ export function AdminActionModal({
             </div>
           )}
 
-          <ul className="space-y-1 rounded-2xl border border-slate-700/50 bg-slate-950/40 px-4 py-3 text-xs text-slate-500">
+          <ul className="space-y-1 rounded-2xl border border-surface-700/50 bg-surface-950/40 px-4 py-3 text-xs text-surface-500">
             {action === 'rename' && (
               <>
                 <li>會自動移除特殊字元：&lt;&gt;:&quot;/\\|?*</li>
@@ -266,11 +266,11 @@ export function AdminActionModal({
           </ul>
 
           {errorMessage ? <p className="text-sm text-red-300">{errorMessage}</p> : null}
-          {!errorMessage && helperMessage ? <p className="text-sm text-cyan-300">{helperMessage}</p> : null}
+          {!errorMessage && helperMessage ? <p className="text-sm text-primary-300">{helperMessage}</p> : null}
 
-          {isSubmitting ? <div className="flex items-center gap-2 rounded-2xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-200">
+          {isSubmitting ? <div className="flex items-center gap-2 rounded-2xl border border-primary-500/40 bg-primary-500/10 px-4 py-3 text-sm text-primary-200">
             <span
-              className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-300/70 border-t-transparent"
+              className="h-4 w-4 animate-spin rounded-full border-2 border-primary-300/70 border-t-transparent"
               aria-hidden="true"
             />
             <span>
@@ -280,9 +280,9 @@ export function AdminActionModal({
             </span>
           </div> : null}
 
-          <div className="flex flex-col gap-3 border-t border-slate-800 pt-4 sm:flex-row sm:justify-end">
+          <div className="flex flex-col gap-3 border-t border-surface-800 pt-4 sm:flex-row sm:justify-end">
             <button
-              className="rounded-full border border-slate-700 px-5 py-2 text-sm font-semibold text-slate-200 transition-all duration-200 hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="rounded-full border border-surface-700 px-5 py-2 text-sm font-semibold text-surface-200 transition-all duration-200 hover:border-surface-500 hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
               type="button"
               onClick={onCancel}
               disabled={isSubmitting}
@@ -290,13 +290,13 @@ export function AdminActionModal({
               取消
             </button>
             <button
-              className="rounded-full bg-gradient-to-r from-cyan-500 to-teal-500 px-5 py-2 text-sm font-semibold text-slate-950 shadow-glow transition-all duration-200 hover:from-cyan-400 hover:to-teal-400 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="rounded-full bg-gradient-to-r from-primary-500 to-accent-500 px-5 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-accent-400 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
               type="submit"
               disabled={confirmDisabled}
             >
               <span className="flex items-center justify-center gap-2">
                 {isSubmitting ? <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-100/70 border-t-transparent"
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-primary-100/70 border-t-transparent"
                   aria-hidden="true"
                 /> : null}
                 <span>確認</span>

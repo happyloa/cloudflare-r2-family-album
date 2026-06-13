@@ -485,7 +485,7 @@ export function MediaGrid() {
       {/* 工具列（relative z-30 讓「＋ 新增」下拉選單能浮在麵包屑之上） */}
       <div className="glass-card relative z-30 flex flex-col gap-4 rounded-3xl border border-surface-700/50 bg-surface-900/80 p-4 shadow-xl ring-1 ring-white/5 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex items-center gap-2.5">
-          <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+          <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
           <h2 className="text-lg font-bold text-white">媒體控制台</h2>
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${

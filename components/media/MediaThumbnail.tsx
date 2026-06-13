@@ -8,7 +8,7 @@ import { MediaFile } from './types';
 function MediaBadge({ type }: { type: MediaFile['type'] }) {
   return (
     <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-end text-xs font-semibold text-white">
-      <span className="rounded-lg bg-slate-900/80 px-2 py-1 text-[11px] uppercase tracking-[0.15em] text-slate-100 ring-1 ring-slate-700">
+      <span className="rounded-lg bg-surface-900/80 px-2 py-1 text-[11px] uppercase tracking-[0.15em] text-surface-100 ring-1 ring-surface-700">
         {type === 'image' ? '圖片' : '影片'}
       </span>
     </div>
@@ -59,10 +59,10 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
 
   if (!canPreview) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 text-slate-100">
+      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 text-surface-100">
         <div className="flex flex-col items-center gap-2 text-xs font-semibold">
-          <span className="rounded-full bg-slate-800/70 px-3 py-1 text-[11px] text-slate-200">行動裝置預覽</span>
-          <p className="text-center text-slate-400">點擊後將載入影片</p>
+          <span className="rounded-full bg-surface-800/70 px-3 py-1 text-[11px] text-surface-200">行動裝置預覽</span>
+          <p className="text-center text-surface-400">點擊後將載入影片</p>
         </div>
       </div>
     );
@@ -95,9 +95,9 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
   const handleReady = useCallback(() => setLoadedUrl(media.url), [media.url]);
 
   return (
-    <div className="relative aspect-[4/3] overflow-hidden bg-slate-900">
+    <div className="relative aspect-[4/3] overflow-hidden bg-surface-900">
       <div
-        className={`absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 transition-opacity duration-500 ${isLoaded ? 'opacity-0' : 'opacity-100'
+        className={`absolute inset-0 bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 transition-opacity duration-500 ${isLoaded ? 'opacity-0' : 'opacity-100'
           }`}
       />
       {media.type === 'image' ? (
