@@ -6,7 +6,6 @@ import { uploadFiles } from '@/lib/upload/client';
 import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
 import { AdminActionModal } from './media/AdminActionModal';
-import { BatchMoveModal } from './media/BatchMoveModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
 import { ConfirmDialog } from './media/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from './media/ContextMenu';
@@ -27,6 +26,7 @@ import { MediaPreviewModal } from './media/MediaPreviewModal';
 import { MediaSection } from './media/MediaSection';
 import { MediaSkeleton } from './media/MediaSkeleton';
 import { MessageToast } from './media/MessageToast';
+import { MovePickerModal } from './media/MovePickerModal';
 import { NewFolderModal } from './media/NewFolderModal';
 import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
@@ -124,7 +124,7 @@ export function MediaGrid() {
   const { menu, openMenu, closeMenu } = useContextMenu();
 
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
-  const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+  const [moveItems, setMoveItems] = useState<{ key: string; isFolder: boolean }[] | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +182,30 @@ export function MediaGrid() {
   const handleCreateFolderMenu = () => {
     setNewMenuOpen(false);
     setNewFolderOpen(true);
+  };
+
+  // 開啟移動目的地選擇器（單一或批次共用）
+  const openMove = async (items: { key: string; isFolder: boolean }[]) => {
+    if (items.length === 0) return;
+    const allowed = await requestAdminToken('請輸入管理密碼以移動項目');
+    if (!allowed) return;
+    setMoveItems(items);
+  };
+
+  const handleMoveConfirm = async (targetPrefix: string) => {
+    const items = moveItems ?? [];
+    setMoveItems(null);
+    if (items.length === 1) {
+      await handleAdminActionConfirm({
+        action: 'move',
+        key: items[0].key,
+        isFolder: items[0].isFolder,
+        targetPrefix
+      });
+    } else if (items.length > 1) {
+      selection.clear();
+      await handleBatchMove(items, targetPrefix);
+    }
   };
 
   // ── 拖曳檔案到頁面上傳 ──
@@ -319,7 +343,7 @@ export function MediaGrid() {
 
     if (useBatch) {
       return [
-        { label: `移動所選 (${selection.selectedCount})`, icon: '📁', onSelect: () => setBatchMoveOpen(true) },
+        { label: `移動所選 (${selection.selectedCount})`, icon: '📁', onSelect: () => void openMove(selection.selectedItems) },
         { type: 'separator' },
         {
           label: `刪除所選 (${selection.selectedCount})`,
@@ -333,7 +357,7 @@ export function MediaGrid() {
     return [
       { label: target.isFolder ? '開啟資料夾' : '預覽', icon: target.isFolder ? '📂' : '👁️', onSelect: () => openTarget(target) },
       { label: '重新命名', icon: '✏️', onSelect: () => void openAdminActionModal('rename', target.key, target.isFolder) },
-      { label: '移動', icon: '📁', onSelect: () => void openAdminActionModal('move', target.key, target.isFolder) },
+      { label: '移動', icon: '📁', onSelect: () => void openMove([{ key: target.key, isFolder: target.isFolder }]) },
       { type: 'separator' },
       { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void openAdminActionModal('delete', target.key, target.isFolder) }
     ];
@@ -354,18 +378,11 @@ export function MediaGrid() {
     await handleBatchDelete(items);
   };
 
-  const handleBatchMoveConfirm = async (targetPrefix: string) => {
-    const items = selection.selectedItems;
-    setBatchMoveOpen(false);
-    selection.clear();
-    await handleBatchMove(items, targetPrefix);
-  };
-
   // ── 鍵盤快捷鍵：Ctrl/Cmd+A 全選、Esc 清除、Delete 刪除所選 ──
   const anyModalOpen =
     Boolean(preview.media) ||
     Boolean(adminAction) ||
-    batchMoveOpen ||
+    Boolean(moveItems) ||
     Boolean(passwordReq) ||
     Boolean(confirmReq);
 
@@ -625,16 +642,13 @@ export function MediaGrid() {
         triggerElement={preview.trigger}
       />
 
-      <BatchMoveModal
-        open={batchMoveOpen}
-        count={selection.selectedCount}
-        hasFolder={selection.selectedItems.some((item) => item.isFolder)}
-        currentPrefix={currentPrefix}
+      <MovePickerModal
+        open={Boolean(moveItems)}
+        items={moveItems ?? []}
+        startPrefix={currentPrefix}
         maxDepth={MAX_FOLDER_DEPTH}
-        sanitizePath={sanitizePath}
-        getDepth={getDepth}
-        onCancel={() => setBatchMoveOpen(false)}
-        onConfirm={handleBatchMoveConfirm}
+        onCancel={() => setMoveItems(null)}
+        onConfirm={handleMoveConfirm}
       />
 
       <NewFolderModal
@@ -650,7 +664,7 @@ export function MediaGrid() {
 
       <SelectionToolbar
         count={selection.selectedCount}
-        onMove={() => setBatchMoveOpen(true)}
+        onMove={() => void openMove(selection.selectedItems)}
         onDelete={() => void handleBatchDeleteClick()}
         onClear={selection.clear}
       />
