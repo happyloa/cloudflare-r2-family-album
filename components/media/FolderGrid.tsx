@@ -1,6 +1,6 @@
 'use client';
 
-import { type DragEvent, type MouseEvent, useMemo, useState } from 'react';
+import { type DragEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
 
 import { ContextTarget } from './hooks/useContextMenu';
 import { useLongPress } from './hooks/useLongPress';
@@ -8,6 +8,9 @@ import { makeSelectionId, SelectionId } from './hooks/useSelection';
 import { FolderItem } from './types';
 
 type ItemModifiers = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+
+// 記住各年份分組的收合狀態（跨重新整理/導覽）
+const GROUP_STORAGE_KEY = 'familyAlbum.folderGroups.collapsed';
 
 export function FolderGrid({
   folders,
@@ -39,8 +42,24 @@ export function FolderGrid({
   onContextMenu: (event: { clientX: number; clientY: number; preventDefault: () => void }, target: ContextTarget) => void;
 }) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(window.localStorage.getItem(GROUP_STORAGE_KEY) ?? '{}') ?? {};
+    } catch {
+      return {};
+    }
+  });
   const longPress = useLongPress((id) => onToggleSelect(id));
+
+  // 收合狀態變動時寫回 localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(collapsedGroups));
+    } catch {
+      /* 忽略（無痕模式等情況） */
+    }
+  }, [collapsedGroups]);
 
   // 依名稱開頭的 4 位數年份分組（無年份者歸「其他」），年份新到舊排序
   const { groupedFolders, sortedYears } = useMemo(() => {
@@ -65,6 +84,16 @@ export function FolderGrid({
     collapsedGroups[year] !== undefined ? !collapsedGroups[year] : index === 0;
   const toggleGroup = (year: string, index: number) =>
     setCollapsedGroups((prev) => ({ ...prev, [year]: isGroupExpanded(year, index) }));
+
+  // 全部展開 / 全部收合
+  const allExpanded = sortedYears.every((year, index) => isGroupExpanded(year, index));
+  const toggleAll = () => {
+    const next: Record<string, boolean> = {};
+    sortedYears.forEach((year) => {
+      next[year] = allExpanded; // 目前全展開 → 全收合（true）；否則全展開（false）
+    });
+    setCollapsedGroups(next);
+  };
 
   const handleDrop = (event: DragEvent<HTMLElement>, folderKey: string) => {
     if (!isDragging) return;
@@ -166,7 +195,7 @@ export function FolderGrid({
         <div className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-2xl ring-1 ring-primary-500/20">
           📁
         </div>
-        <h4 className="min-w-0 flex-1 truncate text-base font-semibold text-surface-50">{folder.name || '未命名'}</h4>
+        <h4 className="min-w-0 flex-1 break-words text-base font-semibold text-surface-50">{folder.name || '未命名'}</h4>
 
         {isAdmin ? (
           <button
@@ -191,11 +220,22 @@ export function FolderGrid({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h3 className="text-xl font-bold text-surface-50">資料夾</h3>
-        <span className="rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">
-          {folders.length} 個
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h3 className="text-xl font-bold text-surface-50">資料夾</h3>
+          <span className="rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">
+            {folders.length} 個
+          </span>
+        </div>
+        {isRootLevel && sortedYears.length > 1 ? (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="rounded-lg border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-300 transition-colors hover:border-primary-500/50 hover:text-primary-100 cursor-pointer"
+          >
+            {allExpanded ? '全部收合' : '全部展開'}
+          </button>
+        ) : null}
       </div>
 
       {!isRootLevel ? (
