@@ -14,14 +14,12 @@ export function BreadcrumbNav({
 }: {
   breadcrumbTrail: Breadcrumb[];
   currentPrefix: string;
-  maxDepth?: number;
   foldersCount: number;
   filesCount: number;
   onBack: () => void;
   onRefresh: () => void;
   onNavigate: (key: string) => void;
   loading: boolean;
-  depth?: number;
 }) {
   const canGoBack = currentPrefix !== '';
 

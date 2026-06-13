@@ -3,6 +3,8 @@ import { XMLParser } from "fast-xml-parser";
 
 import { MAX_FOLDER_DEPTH } from "@/components/media/constants";
 
+import { getDepth, sanitizeName, sanitizePath } from "./path";
+
 type EnvKeys =
   | "R2_ACCOUNT_ID"
   | "R2_ACCESS_KEY_ID"
@@ -119,24 +121,7 @@ function normalizePath(path: string) {
   return path.replace(/^\/+|\/+$/g, "").trim();
 }
 
-// 清理路徑片段：移除不合法字元
-function sanitizeSegment(name: string) {
-  return normalizePath(name).replace(/[<>:"/\\|?*]+/g, "");
-}
-
-// 清理完整路徑
-function sanitizePath(path: string) {
-  return path
-    .split("/")
-    .map((segment) => sanitizeSegment(segment))
-    .filter(Boolean)
-    .join("/");
-}
-
-// 計算路徑深度
-function getDepth(path: string) {
-  return path ? path.split("/").filter(Boolean).length : 0;
-}
+// sanitizeName / sanitizePath / getDepth 由 lib/path 共用
 
 // 建構物件 Key (單一檔案)
 function buildObjectKey(path: string) {
@@ -479,7 +464,7 @@ export async function uploadToR2(file: File, targetPrefix = "") {
     throw new Error("資料夾層數最多兩層，請選擇較淺的路徑");
   }
 
-  const sanitizedFileName = sanitizeSegment(file.name);
+  const sanitizedFileName = sanitizeName(file.name);
 
   if (!sanitizedFileName) {
     throw new Error("Invalid file name");
@@ -526,7 +511,7 @@ export async function uploadToR2(file: File, targetPrefix = "") {
 // 建立空資料夾 (以 0-byte object 結尾 / 實作)
 export async function createFolder(prefix: string, name: string) {
   const normalizedPrefix = sanitizePath(prefix);
-  const normalizedName = sanitizeSegment(name);
+  const normalizedName = sanitizeName(name);
   const folderPath = normalizedPrefix
     ? `${normalizedPrefix}/${normalizedName}`
     : normalizedName;
@@ -634,7 +619,7 @@ export async function renameFile(key: string, newName: string) {
 
   const currentName = parts[parts.length - 1] ?? "";
   const extension = extractExtension(currentName);
-  const sanitizedNewName = sanitizeSegment(newName);
+  const sanitizedNewName = sanitizeName(newName);
   const baseName = removeTrailingExtension(sanitizedNewName, extension);
   const parentPrefix = sanitizePath(parent);
   const existingNames = new Set<string>();
@@ -689,8 +674,8 @@ export async function renameFolder(key: string, newName: string) {
   const parts = normalizedKey.split("/");
   const parent = parts.slice(0, -1).join("/");
   const newFolderPath = parent
-    ? `${sanitizePath(parent)}/${sanitizeSegment(newName)}`
-    : sanitizeSegment(newName);
+    ? `${sanitizePath(parent)}/${sanitizeName(newName)}`
+    : sanitizeName(newName);
 
   const sourcePrefix = buildFolderKey(normalizedKey);
   const targetPrefix = buildFolderKey(newFolderPath);

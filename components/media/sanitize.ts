@@ -1,10 +1,2 @@
-export const sanitizeName = (value: string) => value.replace(/[<>:"/\\|?*]+/g, '').trim();
-
-export const sanitizePath = (value: string) =>
-  value
-    .split('/')
-    .map((segment) => sanitizeName(segment))
-    .filter(Boolean)
-    .join('/');
-
-export const getDepth = (path: string) => (path ? path.split('/').filter(Boolean).length : 0);
+// 路徑處理函式統一由 lib/path 提供（client 與 server 共用），此處重新匯出維持既有引用路徑
+export { sanitizeName, sanitizePath, getDepth } from '@/lib/path';

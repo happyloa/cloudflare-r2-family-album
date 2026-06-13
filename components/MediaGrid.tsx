@@ -580,14 +580,12 @@ export function MediaGrid() {
       <BreadcrumbNav
         breadcrumbTrail={breadcrumbTrail}
         currentPrefix={currentPrefix}
-        maxDepth={MAX_FOLDER_DEPTH}
         foldersCount={folders.length}
         filesCount={files.length}
         onBack={handleBack}
         onRefresh={() => loadMedia(currentPrefix)}
         onNavigate={setCurrentPrefix}
         loading={loading}
-        depth={depth}
       />
 
       {isAdmin && isDragging && parentPrefix !== null ? (
