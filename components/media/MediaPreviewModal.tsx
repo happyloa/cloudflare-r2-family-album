@@ -244,6 +244,7 @@ export function MediaPreviewModal({
                 src={media.url}
                 alt={media.key}
                 fill
+                draggable={false}
                 loading="lazy"
                 decoding="async"
                 className={`object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
@@ -257,6 +258,7 @@ export function MediaPreviewModal({
                 src={media.url}
                 controls
                 autoPlay
+                draggable={false}
                 preload="metadata"
                 playsInline
                 onCanPlay={markLoaded}
