@@ -6,8 +6,6 @@ export {
   createFolder,
   renameFile,
   renameFolder,
-  deleteFile,
-  deleteFolder,
   moveFile,
   moveFolder,
   batchDelete,

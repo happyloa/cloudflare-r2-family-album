@@ -264,66 +264,6 @@ export async function renameFolder(key: string, newName: string) {
   } satisfies FolderItem;
 }
 
-// ── 刪除 ──
-
-// 刪除單一檔案
-export async function deleteFile(key: string) {
-  const normalizedKey = normalizePath(key);
-  const deleteUrl = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${normalizedKey}`);
-  const deleteResponse = await signedFetch(deleteUrl, { method: "DELETE" });
-
-  if (!deleteResponse.ok && deleteResponse.status !== 404) {
-    throw new Error(
-      `Failed to delete file: ${deleteResponse.status} ${deleteResponse.statusText}`,
-    );
-  }
-  clearUsageCache();
-}
-
-// 刪除資料夾 (可選擇移動內容到上一層或全部刪除)
-export async function deleteFolder(
-  prefix: string,
-  options: { moveContentsToParent?: boolean } = {},
-) {
-  const normalizedPrefix = sanitizePath(prefix);
-  const parentPrefix = normalizedPrefix.split("/").slice(0, -1).join("/");
-
-  const keys = await collectKeys(normalizedPrefix, {
-    includePrefixObject: true,
-  });
-  if (keys.length === 0) return;
-
-  if (options.moveContentsToParent) {
-    const safeParentPrefix = sanitizePath(parentPrefix);
-    const existingNames = await listExistingFileNames(safeParentPrefix);
-    const filesToMove = keys.filter((key) => !key.endsWith("/"));
-
-    const copyTasks: { sourceKey: string; targetKey: string }[] = [];
-    for (const sourceKey of filesToMove) {
-      const filename = sourceKey.split("/").pop();
-      if (!filename) continue;
-
-      const resolvedName = buildUniqueFileNameForConflict(filename, existingNames);
-      existingNames.add(resolvedName);
-      const targetKey = safeParentPrefix
-        ? `${safeParentPrefix}/${resolvedName}`
-        : resolvedName;
-      if (targetKey === sourceKey) continue;
-
-      copyTasks.push({ sourceKey, targetKey });
-    }
-
-    await Promise.all(
-      copyTasks.map(({ sourceKey, targetKey }) =>
-        copyObjectWithinBucket(sourceKey, targetKey),
-      ),
-    );
-  }
-
-  await deleteObjects(keys);
-  clearUsageCache();
-}
-
 // ── 移動 ──
 
 // 移動檔案

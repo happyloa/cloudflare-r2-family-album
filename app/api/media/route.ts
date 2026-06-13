@@ -10,8 +10,6 @@ import {
   batchDelete,
   batchMove,
   createFolder,
-  deleteFile,
-  deleteFolder,
   listMedia,
   moveFile,
   moveFolder,
@@ -237,21 +235,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({});
     }
 
-    if (body?.action !== "delete") {
-      return NextResponse.json({ error: "未知的請求" }, { status: 400 });
-    }
-
-    if (!body.key) {
-      return NextResponse.json({ error: "缺少必要參數" }, { status: 400 });
-    }
-
-    if (body.isFolder) {
-      await deleteFolder(body.key, { moveContentsToParent: true });
-      return NextResponse.json({});
-    }
-
-    await deleteFile(body.key);
-    return NextResponse.json({});
+    return NextResponse.json({ error: "未知的請求" }, { status: 400 });
   } catch (error) {
     console.error("Failed to delete item", error);
     return NextResponse.json({ error: "刪除失敗" }, { status: 500 });
