@@ -31,7 +31,7 @@ import { NewFolderModal } from './media/NewFolderModal';
 import { UndoToast } from './media/UndoToast';
 import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
-import { getDepth, sanitizeName, sanitizePath } from './media/sanitize';
+import { getDepth, sanitizeName } from './media/sanitize';
 import { MediaFile } from './media/types';
 import { UsageBar } from './media/UsageBar';
 
@@ -677,15 +677,11 @@ export function MediaGrid() {
       )}
 
       <AdminActionModal
-        key={adminAction ? `${adminAction.action}-${adminAction.target.key}-${currentPrefix}` : 'idle'}
+        key={adminAction ? `${adminAction.action}-${adminAction.target.key}` : 'idle'}
         action={adminAction?.action ?? null}
         target={adminAction?.target ?? null}
-        currentPrefix={currentPrefix}
-        maxDepth={MAX_FOLDER_DEPTH}
         maxNameLength={MAX_FOLDER_NAME_LENGTH}
         sanitizeName={sanitizeName}
-        sanitizePath={sanitizePath}
-        getDepth={getDepth}
         onCancel={() => setAdminAction(null)}
         onConfirm={handleAdminActionConfirm}
       />

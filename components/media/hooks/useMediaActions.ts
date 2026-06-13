@@ -181,35 +181,8 @@ export function useMediaActions({
         pushMessage("移動時發生錯誤，請稍後再試。", "error");
         await loadMedia(currentPrefix, { silent: true });
       }
-      return;
     }
-
-    // 刪除（樂觀移除）
-    removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
-    setAdminAction(null);
-    try {
-      const response = await authorizedFetch("/api/media", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "delete",
-          key: payload.key,
-          isFolder: payload.isFolder,
-        }),
-      });
-
-      if (!response.ok) {
-        pushMessage("刪除失敗，請稍後再試", "error");
-        await loadMedia(currentPrefix, { silent: true });
-        return;
-      }
-
-      pushMessage("已刪除", "success");
-      scheduleReconcile();
-    } catch {
-      pushMessage("刪除時發生錯誤，請稍後再試。", "error");
-      await loadMedia(currentPrefix, { silent: true });
-    }
+    // 刪除已改走 MediaGrid 的 Undo 流程（commitDeleteOnServer），此處不再處理
   };
 
   // 批次移動
