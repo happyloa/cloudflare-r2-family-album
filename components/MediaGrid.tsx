@@ -1,9 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
-import { uploadFiles } from '@/lib/upload/client';
-import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AdminActionModal } from './media/AdminActionModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
@@ -17,27 +14,27 @@ import { useAdminAuth } from './media/hooks/useAdminAuth';
 import { useBucketUsage } from './media/hooks/useBucketUsage';
 import { useContextMenu } from './media/hooks/useContextMenu';
 import { useDialogs } from './media/hooks/useDialogs';
+import { useDropUpload } from './media/hooks/useDropUpload';
 import { useMediaActions } from './media/hooks/useMediaActions';
 import { useMediaData } from './media/hooks/useMediaData';
 import { useMediaDragDrop } from './media/hooks/useMediaDragDrop';
 import { useMessage } from './media/hooks/useMessage';
 import { makeSelectionId, useSelection } from './media/hooks/useSelection';
+import { useUndoableDelete } from './media/hooks/useUndoableDelete';
 import { MediaPreviewModal } from './media/MediaPreviewModal';
 import { MediaSection } from './media/MediaSection';
 import { MediaSkeleton } from './media/MediaSkeleton';
 import { MessageToast } from './media/MessageToast';
 import { MovePickerModal } from './media/MovePickerModal';
 import { NewFolderModal } from './media/NewFolderModal';
-import { UndoToast } from './media/UndoToast';
 import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
+import { Toolbar } from './media/Toolbar';
+import { UndoToast } from './media/UndoToast';
 import { getDepth, sanitizeName } from './media/sanitize';
 import { MediaFile } from './media/types';
-import { UsageBar } from './media/UsageBar';
 
 type Breadcrumb = { label: string; key: string };
-
-const BUCKET_LIMIT_BYTES = 10 * 1024 * 1024 * 1024; // 10GB
 
 type PreviewState = {
   media: MediaFile | null;
@@ -47,6 +44,7 @@ type PreviewState = {
 /**
  * MediaGrid Component: 專案核心元件
  * 整合媒體瀏覽、資料夾導覽、權限驗證、上傳、檔案操作，以及 Drive 風的多選 / 右鍵 / 拖曳上傳。
+ * 拖曳上傳、刪除 Undo、頂部工具列分別抽到 useDropUpload / useUndoableDelete / Toolbar。
  */
 export function MediaGrid() {
   const { message, messageTone, pushMessage } = useMessage();
@@ -79,13 +77,10 @@ export function MediaGrid() {
 
   const usage = useBucketUsage();
 
-  const {
-    adminTokenRef,
-    isAdmin,
-    clearAdminSession,
-    requestAdminToken,
-    authorizedFetch
-  } = useAdminAuth({ pushMessage, openPassword });
+  const { adminTokenRef, isAdmin, clearAdminSession, requestAdminToken, authorizedFetch } = useAdminAuth({
+    pushMessage,
+    openPassword
+  });
 
   const {
     handleCreateFolder,
@@ -125,17 +120,32 @@ export function MediaGrid() {
   const selection = useSelection(orderedIds);
   const { menu, openMenu, closeMenu } = useContextMenu();
 
+  const { dropActive, dropUploading, dropProgress, internalDragRef, handleDroppedFiles } = useDropUpload({
+    currentPrefix,
+    adminTokenRef,
+    requestAdminToken,
+    pushMessage,
+    confirm,
+    usageBytes: usage.usageBytes,
+    refreshUsage: usage.refresh,
+    loadMedia
+  });
+
+  const { pendingDelete, requestDelete, undoDelete } = useUndoableDelete({
+    currentPrefix,
+    requestAdminToken,
+    confirm,
+    pushMessage,
+    removeLocalItems,
+    commitDeleteOnServer,
+    loadMedia,
+    onDeleted: selection.clear
+  });
+
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
   const [moveItems, setMoveItems] = useState<{ key: string; isFolder: boolean }[] | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-
-  // 刪除的 Undo 視窗：先樂觀移除並排程，數秒內可復原
-  const UNDO_WINDOW_MS = 6000;
-  const [pendingDelete, setPendingDelete] = useState<{ key: string; isFolder: boolean }[] | null>(null);
-  const pendingDeleteRef = useRef<{ key: string; isFolder: boolean }[] | null>(null);
-  const deleteTimerRef = useRef<number | null>(null);
 
   // 切換資料夾時清除選取（僅依路徑變動觸發）
   useEffect(() => {
@@ -173,23 +183,9 @@ export function MediaGrid() {
     setCurrentPrefix(parts.join('/'));
   };
 
-  const handleEnableAdmin = () => {
-    void requestAdminToken('請輸入管理密碼以啟用管理模式');
-  };
-
   const handleClearAdminToken = () => {
     selection.clear();
     clearAdminSession('已退出管理模式');
-  };
-
-  // ＋ 新增選單：上傳檔案（觸發隱藏 input）/ 建立資料夾
-  const handlePickUpload = () => {
-    setNewMenuOpen(false);
-    uploadInputRef.current?.click();
-  };
-  const handleCreateFolderMenu = () => {
-    setNewMenuOpen(false);
-    setNewFolderOpen(true);
   };
 
   // 開啟移動目的地選擇器（單一或批次共用）
@@ -216,124 +212,7 @@ export function MediaGrid() {
     }
   };
 
-  // ── 拖曳檔案到頁面上傳 ──
-  const [dropActive, setDropActive] = useState(false);
-  const [dropUploading, setDropUploading] = useState(false);
-  const [dropProgress, setDropProgress] = useState(0);
-  const dragCounter = useRef(0);
-  // 站內媒體/資料夾拖曳期間為 true，避免整頁上傳層誤觸（瀏覽器原生拖圖會帶 Files 型別）
-  const internalDragRef = useRef(false);
-
-  const handleDroppedFiles = useCallback(
-    async (dropped: File[]) => {
-      const selected = dropped.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
-      if (selected.length === 0) {
-        pushMessage('沒有可上傳的圖片或影片檔案。', 'error');
-        return;
-      }
-      const within = selected.filter((f) => {
-        const limit = getSizeLimitByMime(f.type);
-        return typeof limit === 'number' && f.size <= limit;
-      });
-      const oversized = selected.length - within.length;
-      if (within.length === 0) {
-        pushMessage('檔案皆超過大小上限，請調整後再上傳。', 'error');
-        return;
-      }
-      const totalSize = within.reduce((sum, f) => sum + f.size, 0);
-      if (totalSize > MAX_TOTAL_SIZE_MB * 1024 * 1024) {
-        pushMessage(`總容量超過 ${MAX_TOTAL_SIZE_MB}MB，請分批上傳。`, 'error');
-        return;
-      }
-
-      const overLimit = usage.usageBytes !== null && usage.usageBytes > BUCKET_LIMIT_BYTES;
-      if (overLimit) {
-        const ok = await confirm({
-          title: '容量已超過上限',
-          message: '目前貯體容量已超過 10GB，確定仍要上傳嗎？',
-          confirmLabel: '仍要上傳',
-          danger: true
-        });
-        if (!ok) return;
-      }
-
-      const allowed = await requestAdminToken('請輸入管理密碼以上傳');
-      if (!allowed) return;
-
-      setDropUploading(true);
-      setDropProgress(0);
-      try {
-        const response = await uploadFiles({
-          files: within,
-          path: currentPrefix,
-          adminToken: adminTokenRef.current,
-          onProgress: (percent) => setDropProgress(percent ?? 0)
-        });
-        if (!response.ok) {
-          pushMessage('上傳失敗，請稍後再試。', 'error');
-        } else {
-          pushMessage(
-            `已上傳 ${within.length} 個檔案${oversized > 0 ? `（略過 ${oversized} 個過大檔案）` : ''}`,
-            'success'
-          );
-          await loadMedia(currentPrefix, { silent: true });
-          void usage.refresh(true);
-        }
-      } catch {
-        pushMessage('上傳時發生錯誤，請稍後再試。', 'error');
-      } finally {
-        setDropUploading(false);
-      }
-    },
-    [requestAdminToken, currentPrefix, adminTokenRef, pushMessage, loadMedia, usage, confirm]
-  );
-
-  useEffect(() => {
-    // 只接受「從外部拖入的檔案」：必須帶 Files 型別，且非站內拖曳
-    const isExternalFileDrag = (event: DragEvent) =>
-      !internalDragRef.current && Array.from(event.dataTransfer?.types ?? []).includes('Files');
-
-    const onDragEnter = (event: DragEvent) => {
-      if (!isExternalFileDrag(event)) return;
-      event.preventDefault();
-      dragCounter.current += 1;
-      setDropActive(true);
-    };
-    const onDragOver = (event: DragEvent) => {
-      if (!isExternalFileDrag(event)) return;
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-    };
-    const onDragLeave = (event: DragEvent) => {
-      if (!isExternalFileDrag(event)) return;
-      dragCounter.current -= 1;
-      if (dragCounter.current <= 0) {
-        dragCounter.current = 0;
-        setDropActive(false);
-      }
-    };
-    const onDrop = (event: DragEvent) => {
-      dragCounter.current = 0;
-      setDropActive(false);
-      if (!isExternalFileDrag(event)) return;
-      event.preventDefault();
-      const list = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
-      if (list.length) void handleDroppedFiles(list);
-    };
-
-    window.addEventListener('dragenter', onDragEnter);
-    window.addEventListener('dragover', onDragOver);
-    window.addEventListener('dragleave', onDragLeave);
-    window.addEventListener('drop', onDrop);
-    return () => {
-      window.removeEventListener('dragenter', onDragEnter);
-      window.removeEventListener('dragover', onDragOver);
-      window.removeEventListener('dragleave', onDragLeave);
-      window.removeEventListener('drop', onDrop);
-    };
-  }, [handleDroppedFiles]);
-
-  // ── 右鍵 / 溢位選單內容 ──
+  // 右鍵 / 溢位選單：開啟（資料夾進入、檔案預覽）
   const openTarget = (target: { key: string; isFolder: boolean }) => {
     if (target.isFolder) {
       handleEnterFolder(target.key);
@@ -370,69 +249,6 @@ export function MediaGrid() {
       { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void requestDelete([{ key: target.key, isFolder: target.isFolder }]) }
     ];
   }, [menu.target, selection.selectionMode, selection.selectedCount, files]);
-
-  // ── 刪除（含 Undo 視窗）──
-  // 把尚在 Undo 視窗的刪除確實送出（換資料夾或卸載時無法跨資料夾復原）
-  const flushPendingDelete = () => {
-    if (deleteTimerRef.current) {
-      window.clearTimeout(deleteTimerRef.current);
-      deleteTimerRef.current = null;
-    }
-    const pending = pendingDeleteRef.current;
-    pendingDeleteRef.current = null;
-    setPendingDelete(null);
-    if (pending && pending.length) void commitDeleteOnServer(pending);
-  };
-  const flushRef = useRef(flushPendingDelete);
-  flushRef.current = flushPendingDelete;
-
-  const startUndoableDelete = (items: { key: string; isFolder: boolean }[]) => {
-    flushPendingDelete(); // 先送出上一批，避免堆疊
-    removeLocalItems(items);
-    selection.clear();
-    pendingDeleteRef.current = items;
-    setPendingDelete(items);
-    deleteTimerRef.current = window.setTimeout(() => {
-      deleteTimerRef.current = null;
-      const pending = pendingDeleteRef.current;
-      pendingDeleteRef.current = null;
-      setPendingDelete(null);
-      if (pending) void commitDeleteOnServer(pending);
-    }, UNDO_WINDOW_MS);
-  };
-
-  const undoDelete = () => {
-    if (deleteTimerRef.current) {
-      window.clearTimeout(deleteTimerRef.current);
-      deleteTimerRef.current = null;
-    }
-    pendingDeleteRef.current = null;
-    setPendingDelete(null);
-    void loadMedia(currentPrefix, { silent: true });
-    pushMessage('已復原刪除', 'info');
-  };
-
-  const requestDelete = async (items: { key: string; isFolder: boolean }[]) => {
-    if (items.length === 0) return;
-    const allowed = await requestAdminToken('請輸入管理密碼以刪除項目');
-    if (!allowed) return;
-    // 含資料夾的刪除較具破壞性，先確認
-    if (items.some((item) => item.isFolder)) {
-      const ok = await confirm({
-        title: '刪除項目',
-        message: `確定刪除選取的 ${items.length} 個項目？資料夾會連同內容一併刪除（可在數秒內復原）。`,
-        confirmLabel: '刪除',
-        danger: true
-      });
-      if (!ok) return;
-    }
-    startUndoableDelete(items);
-  };
-
-  // 換資料夾或卸載時，把待刪除確實送出
-  useEffect(() => {
-    return () => flushRef.current();
-  }, [currentPrefix]);
 
   // ── 鍵盤快捷鍵：Ctrl/Cmd+A 全選、Esc 清除、Delete 刪除所選 ──
   const anyModalOpen =
@@ -475,7 +291,7 @@ export function MediaGrid() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [anyModalOpen, isAdmin, selection, folders.length, visibleFiles.length]);
+  }, [anyModalOpen, isAdmin, selection, folders.length, visibleFiles.length, requestDelete]);
 
   const hasItems = files.length > 0 || folders.length > 0;
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
@@ -484,86 +300,16 @@ export function MediaGrid() {
     <section className="relative space-y-6">
       <MessageToast message={message} tone={messageTone} />
 
-      {/* 工具列（relative z-30 讓「＋ 新增」下拉選單能浮在麵包屑之上） */}
-      <div className="glass-card relative z-30 flex flex-col gap-4 rounded-3xl border border-surface-700/50 bg-surface-900/80 p-4 shadow-xl ring-1 ring-white/5 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-        <div className="flex items-center gap-2.5">
-          <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-          <h2 className="text-lg font-bold text-white">媒體控制台</h2>
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-              isAdmin
-                ? 'bg-primary-500/15 text-primary-200 ring-primary-500/40'
-                : 'bg-surface-800 text-surface-300 ring-surface-600'
-            }`}
-          >
-            {isAdmin ? '管理模式' : '唯讀'}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <UsageBar usageBytes={usage.usageBytes} loading={usage.loading} error={usage.error} />
-
-          {isAdmin ? (
-            <>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setNewMenuOpen((value) => !value)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-primary-500 cursor-pointer"
-                  aria-haspopup="menu"
-                  aria-expanded={newMenuOpen}
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
-                  </svg>
-                  新增
-                </button>
-                {newMenuOpen ? (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setNewMenuOpen(false)} aria-hidden />
-                    <div
-                      role="menu"
-                      className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-surface-700/70 bg-surface-900/95 py-1.5 shadow-2xl ring-1 ring-white/5 backdrop-blur-md animate-modal-content-in"
-                    >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={handlePickUpload}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 cursor-pointer"
-                      >
-                        <span className="w-5 text-center text-base leading-none">⬆️</span>上傳檔案
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={handleCreateFolderMenu}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 cursor-pointer"
-                      >
-                        <span className="w-5 text-center text-base leading-none">📁</span>建立資料夾
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={handleClearAdminToken}
-                className="rounded-xl border border-surface-700 px-3 py-2 text-sm font-semibold text-surface-200 transition-all duration-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
-              >
-                退出管理
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={handleEnableAdmin}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-primary-500 cursor-pointer"
-            >
-              🔓 啟用管理模式
-            </button>
-          )}
-        </div>
-      </div>
+      <Toolbar
+        isAdmin={isAdmin}
+        usageBytes={usage.usageBytes}
+        usageLoading={usage.loading}
+        usageError={usage.error}
+        onEnableAdmin={() => void requestAdminToken('請輸入管理密碼以啟用管理模式')}
+        onExitAdmin={handleClearAdminToken}
+        onPickUpload={() => uploadInputRef.current?.click()}
+        onCreateFolder={() => setNewFolderOpen(true)}
+      />
 
       {/* 隱藏的上傳檔案 input（＋ 新增 → 上傳檔案） */}
       <input
