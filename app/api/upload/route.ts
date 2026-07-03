@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/ensure-admin";
-import { uploadToR2 } from "@/lib/r2";
+import { uploadFilesToR2 } from "@/lib/r2";
 import {
   MAX_FILE_COUNT,
   MAX_IMAGE_SIZE_BYTES,
@@ -98,10 +98,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 並行上傳至 R2
-    const uploads = await Promise.all(
-      files.map((file) => uploadToR2(file, targetPath)),
-    );
+    // 批次上傳至 R2（同批次同名檔案會自動加編號，避免互相覆蓋）
+    const uploads = await uploadFilesToR2(files, targetPath);
     return NextResponse.json({ media: uploads });
   } catch (error) {
     console.error("Upload failed", error);

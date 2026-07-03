@@ -100,13 +100,8 @@ async function listExistingFileNamesByFolder(prefix: string) {
 
 // ── 上傳 / 建立 ──
 
-// 上傳檔案至 R2
-export async function uploadToR2(file: File, targetPrefix = "") {
-  const normalizedPrefix = sanitizePath(targetPrefix);
-  if (getDepth(normalizedPrefix) > MAX_FOLDER_DEPTH) {
-    throw new Error("資料夾層數最多兩層，請選擇較淺的路徑");
-  }
-
+// 驗證並清理單一上傳檔名，回傳清理後的檔名（不含時間戳記前綴）
+function resolveUploadFileName(file: File) {
   const sanitizedFileName = sanitizeName(file.name);
 
   if (!sanitizedFileName) {
@@ -121,32 +116,64 @@ export async function uploadToR2(file: File, targetPrefix = "") {
     throw new Error(`檔案名稱最多 ${MAX_FILE_NAME_LENGTH} 個字元`);
   }
 
-  const key = `${buildFolderKey(normalizedPrefix)}${Date.now()}-${sanitizedFileName}`;
-  const body = new Uint8Array(await file.arrayBuffer());
+  return sanitizedFileName;
+}
 
-  const url = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${key}`);
-  const response = await signedFetch(url, {
-    method: "PUT",
-    body,
-    headers: {
-      // 儲存時帶上檔案類型，讓 R2 與 CDN 能正確推斷 Content-Type
-      "Content-Type": file.type || "application/octet-stream",
-      "x-amz-acl": "private",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to upload file: ${response.status} ${response.statusText}`,
-    );
+// 批次上傳檔案至 R2。
+// 同一批次內若有多個檔案清理後同名（例如兩支手機都叫 IMG_0001.HEIC），
+// 由於 Promise.all 平行處理時彼此的 Date.now() 幾乎必定相同，會產生一樣的 key 而互相覆蓋、
+// 靜默遺失照片；因此先比照 renameFile/moveFolder 既有的衝突改名邏輯，同步算好每個檔案最終不重複
+// 的 key，再平行上傳。
+export async function uploadFilesToR2(
+  files: File[],
+  targetPrefix = "",
+): Promise<MediaFile[]> {
+  const normalizedPrefix = sanitizePath(targetPrefix);
+  if (getDepth(normalizedPrefix) > MAX_FOLDER_DEPTH) {
+    throw new Error("資料夾層數最多兩層，請選擇較淺的路徑");
   }
 
+  const folderKey = buildFolderKey(normalizedPrefix);
+  const existingNames = await listExistingFileNames(normalizedPrefix);
+
+  const prepared = files.map((file) => {
+    const sanitizedFileName = resolveUploadFileName(file);
+    const candidateName = `${Date.now()}-${sanitizedFileName}`;
+    const finalName = buildUniqueFileNameForConflict(candidateName, existingNames);
+    existingNames.add(finalName);
+    return { file, key: `${folderKey}${finalName}` };
+  });
+
+  const uploads = await Promise.all(
+    prepared.map(async ({ file, key }) => {
+      const body = new Uint8Array(await file.arrayBuffer());
+      const url = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${key}`);
+      const response = await signedFetch(url, {
+        method: "PUT",
+        body,
+        headers: {
+          // 儲存時帶上檔案類型，讓 R2 與 CDN 能正確推斷 Content-Type
+          "Content-Type": file.type || "application/octet-stream",
+          "x-amz-acl": "private",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to upload file: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      return {
+        key,
+        url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
+        type: inferType(key),
+      } satisfies MediaFile;
+    }),
+  );
+
   clearUsageCache();
-  return {
-    key,
-    url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
-    type: inferType(key),
-  } satisfies MediaFile;
+  return uploads;
 }
 
 // 建立空資料夾 (以 0-byte object 結尾 / 實作)

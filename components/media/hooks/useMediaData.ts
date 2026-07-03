@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { FolderItem, MediaFile, MediaResponse } from '../types';
 
@@ -27,6 +27,13 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
+  // 隨時反映最新的 currentPrefix，供非同步的 loadMedia 判斷回應是否已經過期
+  // （例如改名/移動/刪除後排程的背景對帳，若使用者在等待期間切換了資料夾，就不該套用）。
+  const currentPrefixRef = useRef(currentPrefix);
+  useEffect(() => {
+    currentPrefixRef.current = currentPrefix;
+  }, [currentPrefix]);
+
   // 載入媒體列表。silent=true 時不顯示骨架，用於樂觀更新後的背景對帳。
   const loadMedia = useCallback(
     async (prefix = currentPrefix, options: { silent?: boolean } = {}) => {
@@ -46,6 +53,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
         }
 
         const data: MediaResponse = await response.json();
+        // 使用者可能已經切換到別的資料夾，過期的回應（尤其是背景對帳）不套用，
+        // 避免畫面被拉回已經離開的舊資料夾。
+        if (prefix !== currentPrefixRef.current) return;
         setFiles(data.files);
         setFolders(data.folders);
         setCurrentPrefix(data.prefix);

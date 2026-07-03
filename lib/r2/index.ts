@@ -2,7 +2,7 @@
 export type { MediaListing, BucketUsage } from "./core";
 export { listMedia, calculateBucketUsage, clearUsageCache } from "./queries";
 export {
-  uploadToR2,
+  uploadFilesToR2,
   createFolder,
   renameFile,
   renameFolder,
