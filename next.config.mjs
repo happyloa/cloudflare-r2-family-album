@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const customBase = process.env.R2_PUBLIC_BASE;
+const isProd = process.env.NODE_ENV === "production";
 
 const customUrl = (() => {
   if (!customBase) return null;
@@ -24,30 +25,27 @@ const customPattern = (() => {
     pathname,
   };
 })();
+// next/image 的 remotePatterns 允許清單以外的來源就不該出現在 CSP 的 img-src / media-src，
+// 兩者共用同一個 R2 公開網域，找不到時才退回較寬鬆的 https: 當保險。
+const r2Origin = customUrl ? `${customUrl.protocol}//${customUrl.host}` : null;
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // unsafe-eval 僅開發環境需要（Turbopack/HMR），正式環境拿掉以縮小 XSS 攻擊面。
+  isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "connect-src 'self' https:",
-  "img-src 'self' data: blob: https:",
-  "media-src 'self' https: data: blob:",
+  `img-src 'self' data: blob: ${r2Origin ?? "https:"}`,
+  `media-src 'self' data: blob: ${r2Origin ?? "https:"}`,
 ].join("; ");
 
-const remotePatterns = [
-  {
-    protocol: "https",
-    hostname: "**",
-  },
-];
-
-if (customPattern) {
-  remotePatterns.push(customPattern);
-}
+// 只允許實際會用到的 R2 公開網域，避免 next/image 的優化端點被當成開放圖片代理。
+const remotePatterns = customPattern ? [customPattern] : [];
 
 const nextConfig = {
   images: {

@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  MAX_FOLDER_DEPTH,
-  MAX_FOLDER_NAME_LENGTH,
-} from "@/components/media/constants";
-import { getDepth } from "@/components/media/sanitize";
+import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "@/lib/constants";
 import { requireAdmin } from "@/lib/ensure-admin";
+import { getDepth } from "@/lib/path";
 import {
   batchDelete,
   batchMove,

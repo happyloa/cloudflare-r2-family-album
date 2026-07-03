@@ -52,6 +52,22 @@ function increment(key: string): number {
   return next;
 }
 
+// ── 常數時間字串比對 ──
+
+// 逐字元 XOR 累加，比較時間不隨字串長度或不匹配位置變化，避免透過回應時間差猜測密碼。
+function timingSafeEqual(a: string, b: string): boolean {
+  const bufA = new TextEncoder().encode(a);
+  const bufB = new TextEncoder().encode(b);
+  const length = Math.max(bufA.length, bufB.length);
+  let diff = bufA.length ^ bufB.length;
+
+  for (let i = 0; i < length; i += 1) {
+    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
+  }
+
+  return diff === 0;
+}
+
 // ── 取得客戶端 IP ──
 
 function getClientIp(request: Request): string {
@@ -97,7 +113,7 @@ export async function requireAdmin(
   }
 
   const providedToken = request.headers.get("x-admin-token");
-  if (!providedToken || providedToken !== adminToken) {
+  if (!providedToken || !timingSafeEqual(providedToken, adminToken)) {
     const failures = increment(key);
     if (failures >= MAX_FAILURES) {
       return NextResponse.json(

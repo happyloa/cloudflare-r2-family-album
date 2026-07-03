@@ -1,4 +1,4 @@
-import { MAX_FOLDER_DEPTH } from "@/components/media/constants";
+import { MAX_FOLDER_DEPTH } from "@/lib/constants";
 
 import { getDepth, sanitizeName, sanitizePath } from "../path";
 

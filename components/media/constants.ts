@@ -1,5 +1,6 @@
-export const MAX_FOLDER_DEPTH = 2;
-export const MAX_FOLDER_NAME_LENGTH = 30;
+// 資料夾規則常數的來源已移至 lib/constants（server 端邏輯也會用到），這裡轉發維持既有引用路徑。
+export { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from '@/lib/constants';
+
 export const MAX_ADMIN_TOKEN_LENGTH = 15;
 export const ITEMS_PER_PAGE = 12;
 export const ADMIN_TOKEN_STORAGE_KEY = 'adminToken';

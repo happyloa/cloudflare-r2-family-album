@@ -29,6 +29,7 @@ components/
                        # useUndoableDelete / useBucketUsage / useLongPress / useMessage
 lib/
   r2/                  # Cloudflare R2 操作（core / queries / mutations，使用 aws4fetch）
+  constants.ts         # 跨前後端共用的資料夾規則常數（深度 / 名稱長度上限）
   path.ts              # 共用路徑處理（client 與 server 共用）
   ensure-admin.ts      # 管理員身分驗證與 IP 速率限制
   upload/              # 上傳常數與前端壓縮 / 上傳邏輯
