@@ -5,9 +5,10 @@ import {
   ADMIN_TOKEN_STORAGE_KEY,
   MAX_ADMIN_TOKEN_LENGTH,
 } from "../constants";
+import { MessageTone } from "../types";
 
 type UseAdminAuthProps = {
-  pushMessage: (text: string, tone: "info" | "success" | "error") => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
   openPassword: (opts: {
     title?: string;
     message?: string;

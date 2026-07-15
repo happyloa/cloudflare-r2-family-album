@@ -67,7 +67,6 @@ export function MediaGrid() {
     setSortKey,
     sortDir,
     setSortDir,
-    visibleFiles,
     hasMore,
     loadingMore,
     loadMore,
@@ -275,7 +274,7 @@ export function MediaGrid() {
       if (anyModalOpen || !isAdmin) return;
 
       if ((event.ctrlKey || event.metaKey) && (event.key === 'a' || event.key === 'A')) {
-        if (folders.length || visibleFiles.length) {
+        if (folders.length || filteredFiles.length) {
           event.preventDefault();
           selection.selectAll();
         }
@@ -292,7 +291,7 @@ export function MediaGrid() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [anyModalOpen, isAdmin, selection, folders.length, visibleFiles.length, requestDelete]);
+  }, [anyModalOpen, isAdmin, selection, folders.length, filteredFiles.length, requestDelete]);
 
   const hasItems = files.length > 0 || folders.length > 0;
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
@@ -391,7 +390,6 @@ export function MediaGrid() {
           <MediaSection
             allFilesCount={files.length}
             files={filteredFiles}
-            visibleFiles={visibleFiles}
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={loadMore}

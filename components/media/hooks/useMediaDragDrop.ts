@@ -3,6 +3,7 @@ import { DragEvent, useState } from 'react';
 import { AdminActionType } from '../AdminActionModal';
 import { MAX_FOLDER_DEPTH } from '../constants';
 import { getDepth, sanitizePath } from '../sanitize';
+import { MessageTone } from '../types';
 
 type DragItem = { key: string; isFolder: boolean };
 
@@ -10,7 +11,7 @@ type UseMediaDragDropProps = {
   isAdmin: boolean;
   currentPrefix: string;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
-  pushMessage: (text: string, tone: 'info' | 'success' | 'error') => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
   handleAdminActionConfirm: (payload: {
     action: AdminActionType;
     key: string;

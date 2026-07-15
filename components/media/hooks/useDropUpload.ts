@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { uploadFiles } from '@/lib/upload/client';
 import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
-const BUCKET_LIMIT_BYTES = 10 * 1024 * 1024 * 1024; // 10GB
+import { BUCKET_LIMIT_BYTES } from '../constants';
+import { MessageTone } from '../types';
 
 type ConfirmFn = (opts: {
   title?: string;
@@ -17,7 +18,7 @@ type UseDropUploadProps = {
   currentPrefix: string;
   adminTokenRef: { current: string };
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
-  pushMessage: (text: string, tone: 'info' | 'success' | 'error') => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
   confirm: ConfirmFn;
   usageBytes: number | null;
   refreshUsage: (force?: boolean) => void | Promise<void>;

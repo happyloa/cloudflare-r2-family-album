@@ -20,7 +20,6 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 export function MediaSection({
   allFilesCount,
   files,
-  visibleFiles,
   hasMore,
   loadingMore,
   onLoadMore,
@@ -47,7 +46,6 @@ export function MediaSection({
 }: {
   allFilesCount: number;
   files: MediaFile[];
-  visibleFiles: MediaFile[];
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -88,7 +86,7 @@ export function MediaSection({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, onLoadMore, visibleFiles.length]);
+  }, [hasMore, onLoadMore, files.length]);
 
   if (!allFilesCount) return null;
 
@@ -211,7 +209,7 @@ export function MediaSection({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visibleFiles.map((item) => {
+        {files.map((item) => {
           const id = makeSelectionId(item.key, false);
           const selected = isAdmin && isSelected(id);
           return (
@@ -281,7 +279,7 @@ export function MediaSection({
                     event.stopPropagation();
                     onContextMenu(event, { key: item.key, isFolder: false });
                   }}
-                  className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-900/70 text-surface-200 opacity-0 ring-1 ring-white/10 backdrop-blur-sm transition-all duration-150 hover:bg-surface-900 hover:text-white group-hover:opacity-100 cursor-pointer"
+                  className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-900/70 text-surface-200 opacity-0 ring-1 ring-white/10 backdrop-blur-sm transition-all duration-150 hover:bg-surface-900 hover:text-white group-hover:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
                   aria-label="更多操作"
                 >
                   <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">

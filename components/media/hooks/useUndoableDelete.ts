@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { MessageTone } from '../types';
+
 type Item = { key: string; isFolder: boolean };
 
 type ConfirmFn = (opts: {
@@ -14,7 +16,7 @@ type UseUndoableDeleteProps = {
   currentPrefix: string;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
   confirm: ConfirmFn;
-  pushMessage: (text: string, tone: 'info' | 'success' | 'error') => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
   removeLocalItems: (items: Item[]) => void;
   commitDeleteOnServer: (items: Item[]) => Promise<void>;
   loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
