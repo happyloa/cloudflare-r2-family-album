@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AdminActionTarget, AdminActionType } from "../AdminActionModal";
 import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "../constants";
 import { getDepth, sanitizeName } from "../sanitize";
+import { MessageTone } from "../types";
 
 type BatchItem = { key: string; isFolder: boolean };
 
@@ -12,7 +13,7 @@ type UseMediaActionsProps = {
     init?: RequestInit,
   ) => Promise<Response>;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
-  pushMessage: (text: string, tone: "info" | "success" | "error") => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
   loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
   removeLocalItems: (items: BatchItem[]) => void;
   renameLocalItem: (key: string, isFolder: boolean, newName: string) => void;
@@ -21,6 +22,13 @@ type UseMediaActionsProps = {
 
 // R2 的 List 在寫入後可能有短暫延遲，操作後排程一次背景對帳以校正樂觀更新。
 const RECONCILE_DELAY_MS = 1500;
+
+// 依 HTTP 狀態碼給出更明確的失敗訊息；401 通常代表管理 session 已逾時。
+function describeActionFailure(status: number, fallback: string) {
+  if (status === 401) return "管理模式已逾時，請重新輸入密碼後再試一次。";
+  if (status === 429) return "操作過於頻繁，請稍後再試。";
+  return fallback;
+}
 
 /**
  * useMediaActions Hook: 媒體與資料夾操作邏輯
@@ -81,7 +89,7 @@ export function useMediaActions({
       });
 
       if (!response.ok) {
-        pushMessage("建立資料夾失敗", "error");
+        pushMessage(describeActionFailure(response.status, "建立資料夾失敗"), "error");
         return false;
       }
 
@@ -138,9 +146,30 @@ export function useMediaActions({
         });
 
         if (!response.ok) {
-          pushMessage("重新命名失敗，請稍後再試", "error");
+          pushMessage(describeActionFailure(response.status, "重新命名失敗，請稍後再試"), "error");
           await loadMedia(currentPrefix, { silent: true });
           return;
+        }
+
+        // 若同資料夾已有同名項目，伺服器會自動加上編號（例如「B (2).jpg」）；
+        // 本地樂觀更新套用的是使用者輸入的原始名稱，這裡用伺服器實際採用的名稱校正，
+        // 避免跟既有項目的 key 撞在一起而讓 React 清單短暫顯示錯亂。
+        const data = await response.json().catch(() => null);
+        if (payload.isFolder) {
+          const actualName = (data?.folder?.key ?? "").split("/").pop();
+          if (actualName && actualName !== payload.newName) {
+            renameLocalItem(payload.key, true, actualName);
+          }
+        } else {
+          const actualKey = data?.media?.key;
+          if (typeof actualKey === "string") {
+            const actualName = actualKey.split("/").pop() ?? payload.newName;
+            if (actualName !== payload.newName) {
+              const parent = payload.key.split("/").slice(0, -1).join("/");
+              const optimisticKey = parent ? `${parent}/${payload.newName}` : payload.newName;
+              renameLocalItem(optimisticKey, false, actualName);
+            }
+          }
         }
 
         pushMessage("已更新名稱", "success");
@@ -170,7 +199,7 @@ export function useMediaActions({
         });
 
         if (!response.ok) {
-          pushMessage("移動失敗，請稍後再試", "error");
+          pushMessage(describeActionFailure(response.status, "移動失敗，請稍後再試"), "error");
           await loadMedia(currentPrefix, { silent: true });
           return;
         }
@@ -196,7 +225,7 @@ export function useMediaActions({
         body: JSON.stringify({ action: "batch-move", items, targetPrefix }),
       });
       if (!response.ok) {
-        pushMessage("批次移動失敗，請稍後再試", "error");
+        pushMessage(describeActionFailure(response.status, "批次移動失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
         return;
       }
@@ -218,7 +247,7 @@ export function useMediaActions({
         body: JSON.stringify({ action: "batch-delete", items }),
       });
       if (!response.ok) {
-        pushMessage("刪除失敗，請稍後再試", "error");
+        pushMessage(describeActionFailure(response.status, "刪除失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
         return;
       }

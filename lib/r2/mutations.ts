@@ -95,13 +95,35 @@ function isSameOrDescendantPath(path: string, ancestor: string) {
   return path === ancestor || path.startsWith(`${ancestor}/`);
 }
 
+// 分批複製，任何一批只要有一個失敗，就把這批（含同批次裡其他已成功）以及
+// 前面批次已成功複製的目的地物件全部刪除再往上拋出錯誤，避免半途而廢留下
+// 孤兒/重複檔案，也避免下次重試被「目的地已存在」的衝突檢查永久卡住。
+// 用 allSettled 而非 all，確保回滾前一定等到同批次所有複製都真正結束，
+// 不會漏掉跟失敗項目同時仍在進行、稍後才完成的複製。
 async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: string }[]) {
+  const completedTargetKeys: string[] = [];
+
   for (let offset = 0; offset < tasks.length; offset += COPY_CONCURRENCY) {
-    await Promise.all(
-      tasks.slice(offset, offset + COPY_CONCURRENCY).map(({ sourceKey, targetKey }) =>
-        copyObjectWithinBucket(sourceKey, targetKey),
-      ),
+    const batch = tasks.slice(offset, offset + COPY_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey)),
     );
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") completedTargetKeys.push(batch[index].targetKey);
+    });
+
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      if (completedTargetKeys.length > 0) {
+        await deleteObjects(completedTargetKeys).catch(() => {
+          // 回滾本身失敗也沒有更好的辦法，仍然把原本的複製錯誤往上拋出。
+        });
+      }
+      throw failure.reason;
+    }
   }
 }
 

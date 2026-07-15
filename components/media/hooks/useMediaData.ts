@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { FolderItem, MediaFile, MediaResponse } from '../types';
+import { FolderItem, MediaFile, MediaResponse, MessageTone } from '../types';
 
 type FilterOption = 'all' | 'image' | 'video';
 export type SortKey = 'name' | 'date' | 'size';
@@ -34,7 +34,7 @@ function syncFolderInUrl(prefix: string) {
 }
 
 type UseMediaDataProps = {
-  pushMessage: (text: string, tone: 'info' | 'success' | 'error') => void;
+  pushMessage: (text: string, tone: MessageTone) => void;
 };
 
 /**
@@ -46,11 +46,15 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPrefix, setCurrentPrefixState] = useState(getFolderFromUrl);
+  // 讀 ref 而非閉包裡的 currentPrefix，讓這個函式維持穩定的參照（不需要隨 currentPrefix
+  // 變動而重建）。loadMedia 內部呼叫的正是這個穩定版本，才不會因為自己的 useCallback
+  // 依賴只有 [pushMessage] 而永遠鎖死在掛載當下的舊 currentPrefix，導致每次背景對帳
+  // 都誤判「prefix 有變」而重複 push 瀏覽器歷史紀錄。
   const setCurrentPrefix = useCallback((prefix: string) => {
-    if (prefix === currentPrefix) return;
+    if (prefix === currentPrefixRef.current) return;
     syncFolderInUrl(prefix);
     setCurrentPrefixState(prefix);
-  }, [currentPrefix]);
+  }, []);
   const [filter, setFilter] = useState<FilterOption>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('date');
@@ -68,8 +72,17 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   const requestControllerRef = useRef<AbortController | null>(null);
   const loadingRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  // 隨時反映目前已載入的 files/folders，供背景對帳判斷「使用者原本已捲動載入多少」，
+  // 不放進 loadMedia 的 useCallback 依賴（那會讓 loadMedia 每次資料變動就重建，
+  // 連帶讓下面依賴 loadMedia 的 useEffect 重新觸發，變成無窮重新載入）。
+  const itemsSnapshotRef = useRef<{ files: MediaFile[]; folders: FolderItem[] }>({ files: [], folders: [] });
+  useEffect(() => {
+    itemsSnapshotRef.current = { files, folders };
+  }, [files, folders]);
 
   // 載入媒體列表。silent=true 時不顯示骨架，用於樂觀更新後的背景對帳。
+  // 背景對帳（silent）且資料夾沒變時，會重新抓回使用者原本已捲動載入的所有分頁，
+  // 不會把清單砍回第一頁；一般導覽（非 silent，或切換到別的資料夾）則一律從第一頁開始。
   const loadMedia = useCallback(
     async (prefix = currentPrefixRef.current, options: { silent?: boolean } = {}) => {
       const requestSequence = requestSequenceRef.current + 1;
@@ -83,39 +96,59 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
       loadingRef.current = true;
       if (!options.silent) setLoading(true);
 
+      const isReconcile = Boolean(options.silent) && prefix === currentPrefixRef.current;
+      const targetCount = isReconcile
+        ? itemsSnapshotRef.current.files.length + itemsSnapshotRef.current.folders.length
+        : 0;
+
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       requestControllerRef.current = controller;
       const timeoutId = controller ? window.setTimeout(() => controller.abort(), 10000) : null;
 
       try {
-        const params = new URLSearchParams({
-          prefix,
-          limit: String(PAGE_SIZE)
-        });
-        const response = await fetch(`/api/media?${params.toString()}`, {
-          signal: controller?.signal
-        });
+        let mergedFiles: MediaFile[] = [];
+        let mergedFolders: FolderItem[] = [];
+        let resolvedPrefix = prefix;
+        let nextPageCursor: string | null = null;
+        let cursor: string | undefined;
 
-        if (
-          requestSequence !== requestSequenceRef.current ||
-          prefix !== currentPrefixRef.current
-        ) {
-          return;
-        }
-        if (!response.ok) {
-          const content = response.status === 429 ? '請稍後再試，系統暫時忙碌。' : '無法載入媒體，請稍後再試。';
-          pushMessage(content, 'error');
-          return;
-        }
+        do {
+          const params = new URLSearchParams({
+            prefix,
+            limit: String(PAGE_SIZE)
+          });
+          if (cursor) params.set('cursor', cursor);
 
-        const data: MediaResponse = await response.json();
-        // 使用者可能已經切換到別的資料夾，過期的回應（尤其是背景對帳）不套用，
-        // 避免畫面被拉回已經離開的舊資料夾。
-        if (requestSequence !== requestSequenceRef.current || prefix !== currentPrefixRef.current) return;
-        const resolvedPrefix = data.prefix;
-        const nextPageCursor = data.nextCursor ?? null;
-        setFiles(mergeItemsByKey([], data.files));
-        setFolders(mergeItemsByKey([], data.folders));
+          const response = await fetch(`/api/media?${params.toString()}`, {
+            signal: controller?.signal
+          });
+
+          if (
+            requestSequence !== requestSequenceRef.current ||
+            prefix !== currentPrefixRef.current
+          ) {
+            return;
+          }
+          if (!response.ok) {
+            const content = response.status === 429 ? '請稍後再試，系統暫時忙碌。' : '無法載入媒體，請稍後再試。';
+            pushMessage(content, 'error');
+            return;
+          }
+
+          const data: MediaResponse = await response.json();
+          // 使用者可能已經切換到別的資料夾，過期的回應（尤其是背景對帳）不套用，
+          // 避免畫面被拉回已經離開的舊資料夾。
+          if (requestSequence !== requestSequenceRef.current || prefix !== currentPrefixRef.current) return;
+
+          resolvedPrefix = data.prefix;
+          mergedFiles = mergeItemsByKey(mergedFiles, data.files);
+          mergedFolders = mergeItemsByKey(mergedFolders, data.folders);
+          nextPageCursor = data.nextCursor ?? null;
+          cursor = nextPageCursor ?? undefined;
+        } while (cursor && mergedFiles.length + mergedFolders.length < targetCount);
+
+        setFiles(mergedFiles);
+        setFolders(mergedFolders);
         nextCursorRef.current = nextPageCursor;
         setNextCursor(nextPageCursor);
         loadedPrefixRef.current = resolvedPrefix;
@@ -130,6 +163,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
           if (!options.silent) pushMessage('載入逾時，請再次嘗試或檢查網路。', 'error');
         } else if (!options.silent) {
           pushMessage('載入媒體時發生錯誤，請稍後再試。', 'error');
+        } else {
+          // 背景對帳失敗不打擾使用者，但至少留下紀錄方便日後排查「畫面跟 R2 對不上」的回報。
+          console.warn(`[useMediaData] silent reconcile failed for prefix "${prefix}"`, error);
         }
       } finally {
         if (timeoutId) {
@@ -254,7 +290,6 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   }, [folders, sortKey, sortDir]);
 
   // Filters and sorting apply to every file loaded from the server so far.
-  const visibleFiles = sortedFiles;
   const hasMore = nextCursor !== null;
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;
@@ -355,7 +390,6 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
     setSortKey,
     sortDir,
     setSortDir,
-    visibleFiles,
     hasMore,
     loadMore,
     filteredFiles: sortedFiles,
