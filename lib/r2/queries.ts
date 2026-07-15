@@ -1,5 +1,3 @@
-import { sanitizePath } from "../path";
-
 import {
   BucketUsage,
   MediaFile,
@@ -9,6 +7,7 @@ import {
   encodeKeyForUrl,
   getEnv,
   inferType,
+  normalizePath,
   parseListResult,
   signedFetch,
 } from "./core";
@@ -22,12 +21,21 @@ export function clearUsageCache() {
 }
 
 // 取得媒體列表 (包含資料夾與檔案)
-export async function listMedia(prefix = ""): Promise<MediaListing> {
-  const normalizedPrefix = sanitizePath(prefix);
+export type ListMediaOptions = {
+  cursor?: string;
+  limit?: number;
+};
+
+export async function listMedia(prefix = "", options: ListMediaOptions = {}): Promise<MediaListing> {
+  const normalizedPrefix = normalizePath(prefix);
   const searchPrefix = buildFolderKey(normalizedPrefix);
 
   const response = await signedFetch(
-    buildListUrl(searchPrefix, { delimiter: "/" }).toString(),
+    buildListUrl(searchPrefix, {
+      continuationToken: options.cursor,
+      delimiter: "/",
+      maxKeys: options.limit,
+    }).toString(),
   );
   if (!response.ok) {
     throw new Error(
@@ -35,7 +43,7 @@ export async function listMedia(prefix = ""): Promise<MediaListing> {
     );
   }
 
-  const { folders, contents } = parseListResult(
+  const { folders, contents, nextContinuationToken } = parseListResult(
     await response.text(),
     searchPrefix,
     true,
@@ -53,6 +61,7 @@ export async function listMedia(prefix = ""): Promise<MediaListing> {
     prefix: normalizedPrefix,
     folders,
     files,
+    nextCursor: nextContinuationToken ?? null,
   } satisfies MediaListing;
 }
 

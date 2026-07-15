@@ -39,7 +39,6 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
 
       try {
         // iOS/Safari 需要觸發 play() 才會渲染第一幀，若失敗則改用備援畫面
-        await video.play();
         setCanPreview(true);
         // 完成第一幀渲染後再交由 canplay 事件觸發 ready 通知
       } catch (error) {
@@ -79,7 +78,23 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
       draggable={false}
       preload="metadata"
       aria-label={alt}
-      onCanPlay={notifyReady}
+      onPointerEnter={() => {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const video = videoRef.current;
+        if (!video) return;
+        void video.play().catch(() => {
+          setCanPreview(false);
+          notifyReady();
+        });
+      }}
+      onPointerLeave={() => videoRef.current?.pause()}
+      onFocus={() => {
+        const video = videoRef.current;
+        if (video && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          void video.play().catch(() => setCanPreview(false));
+        }
+      }}
+      onBlur={() => videoRef.current?.pause()}
       onLoadedData={notifyReady}
       onError={notifyReady}
     />

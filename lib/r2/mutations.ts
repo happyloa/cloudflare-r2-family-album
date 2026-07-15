@@ -1,13 +1,12 @@
 import { MAX_FOLDER_DEPTH } from "@/lib/constants";
 
-import { getDepth, sanitizeName, sanitizePath } from "../path";
+import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "../path";
 
 import {
   FolderItem,
   MediaFile,
-  buildEndpointPath,
+  buildObjectUrl,
   buildFolderKey,
-  buildObjectKey,
   collectKeys,
   copyObjectWithinBucket,
   deleteObjects,
@@ -16,10 +15,12 @@ import {
   inferType,
   normalizePath,
   signedFetch,
+  objectExists,
 } from "./core";
-import { clearUsageCache, listMedia } from "./queries";
+import { clearUsageCache } from "./queries";
 
 const MAX_FILE_NAME_LENGTH = 255;
+const COPY_CONCURRENCY = 4;
 
 // ── 檔名衝突處理 ──
 
@@ -63,22 +64,86 @@ function buildUniqueFileNameForConflict(
 }
 
 // 列出既有檔名集合 (用於檢查衝突)
+function normalizeStoredKey(key: string, label: string) {
+  const normalized = normalizePath(key);
+  if (!normalized) {
+    throw new Error(`Invalid ${label}`);
+  }
+  if (hasPeriodOnlyPathSegment(normalized)) {
+    throw new Error(`${label} contains an unsafe period-only path segment`);
+  }
+  return normalized;
+}
+
+function normalizeStoredPrefix(prefix: string, label: string) {
+  const normalized = normalizePath(prefix);
+  if (hasPeriodOnlyPathSegment(normalized)) {
+    throw new Error(`${label} contains an unsafe period-only path segment`);
+  }
+  return normalized;
+}
+
+function normalizeNewName(value: string, label: string) {
+  const normalized = sanitizeName(value);
+  if (!normalized || isPeriodOnlyPathSegment(normalized)) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return normalized;
+}
+
+function isSameOrDescendantPath(path: string, ancestor: string) {
+  return path === ancestor || path.startsWith(`${ancestor}/`);
+}
+
+async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: string }[]) {
+  for (let offset = 0; offset < tasks.length; offset += COPY_CONCURRENCY) {
+    await Promise.all(
+      tasks.slice(offset, offset + COPY_CONCURRENCY).map(({ sourceKey, targetKey }) =>
+        copyObjectWithinBucket(sourceKey, targetKey),
+      ),
+    );
+  }
+}
+
+async function assertFolderDestinationAvailable(folderPath: string) {
+  const [exactObjectExists, nestedKeys] = await Promise.all([
+    objectExists(folderPath),
+    collectKeys(folderPath, { includePrefixObject: true }),
+  ]);
+
+  if (exactObjectExists || nestedKeys.length > 0) {
+    throw new Error("A folder or object already exists at the destination");
+  }
+}
+
+async function assertFileDestinationDoesNotConflictWithFolder(key: string) {
+  const nestedKeys = await collectKeys(key, { includePrefixObject: true });
+  if (nestedKeys.length > 0) {
+    throw new Error("A folder already exists at the destination");
+  }
+}
+
 async function listExistingFileNames(
   prefix: string,
   options: { excludeKey?: string } = {},
 ) {
-  const listing = await listMedia(prefix);
+  const normalizedPrefix = normalizeStoredPrefix(prefix, "folder path");
+  const folderKey = buildFolderKey(normalizedPrefix);
+  const keys = await collectKeys(normalizedPrefix, { includePrefixObject: true });
   const existingNames = new Set<string>();
 
-  for (const file of listing.files) {
-    if (options.excludeKey && file.key === options.excludeKey) continue;
-    const name = file.key.split("/").pop();
-    if (name) existingNames.add(name);
+  for (const key of keys) {
+    if (options.excludeKey && key === options.excludeKey) continue;
+    if (key === folderKey || key.endsWith("/")) continue;
+
+    const relative = folderKey ? key.slice(folderKey.length) : key;
+    if (!relative || relative.includes("/")) continue;
+    existingNames.add(relative);
   }
+
 
   return existingNames;
 }
-
 // 依資料夾列出既有檔名 (用於大量移動時檢查衝突)
 async function listExistingFileNamesByFolder(prefix: string) {
   const existingNamesByFolder = new Map<string, Set<string>>();
@@ -102,7 +167,7 @@ async function listExistingFileNamesByFolder(prefix: string) {
 
 // 驗證並清理單一上傳檔名，回傳清理後的檔名（不含時間戳記前綴）
 function resolveUploadFileName(file: File) {
-  const sanitizedFileName = sanitizeName(file.name);
+  const sanitizedFileName = normalizeNewName(file.name, "file name");
 
   if (!sanitizedFileName) {
     throw new Error("Invalid file name");
@@ -128,7 +193,7 @@ export async function uploadFilesToR2(
   files: File[],
   targetPrefix = "",
 ): Promise<MediaFile[]> {
-  const normalizedPrefix = sanitizePath(targetPrefix);
+  const normalizedPrefix = normalizeStoredPrefix(targetPrefix, "target folder");
   if (getDepth(normalizedPrefix) > MAX_FOLDER_DEPTH) {
     throw new Error("資料夾層數最多兩層，請選擇較淺的路徑");
   }
@@ -147,7 +212,7 @@ export async function uploadFilesToR2(
   const uploads = await Promise.all(
     prepared.map(async ({ file, key }) => {
       const body = new Uint8Array(await file.arrayBuffer());
-      const url = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${key}`);
+      const url = buildObjectUrl(key);
       const response = await signedFetch(url, {
         method: "PUT",
         body,
@@ -178,14 +243,15 @@ export async function uploadFilesToR2(
 
 // 建立空資料夾 (以 0-byte object 結尾 / 實作)
 export async function createFolder(prefix: string, name: string) {
-  const normalizedPrefix = sanitizePath(prefix);
-  const normalizedName = sanitizeName(name);
+  const normalizedPrefix = normalizeStoredPrefix(prefix, "parent folder");
+  const normalizedName = normalizeNewName(name, "folder name");
   const folderPath = normalizedPrefix
     ? `${normalizedPrefix}/${normalizedName}`
     : normalizedName;
   const folderKey = `${buildFolderKey(folderPath)}`;
+  await assertFolderDestinationAvailable(folderPath);
 
-  const url = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${folderKey}`);
+  const url = buildObjectUrl(folderKey);
   const response = await signedFetch(url, {
     method: "PUT",
     body: new Uint8Array(),
@@ -208,29 +274,20 @@ export async function createFolder(prefix: string, name: string) {
 
 // 重新命名檔案
 export async function renameFile(key: string, newName: string) {
-  const normalizedKey = normalizePath(key);
+  const normalizedKey = normalizeStoredKey(key, "file key");
   const parts = normalizedKey.split("/");
   const parent = parts.slice(0, -1).join("/");
 
   const currentName = parts[parts.length - 1] ?? "";
   const extension = extractExtension(currentName);
-  const sanitizedNewName = sanitizeName(newName);
+  const sanitizedNewName = normalizeNewName(newName, "file name");
   const baseName = removeTrailingExtension(sanitizedNewName, extension);
-  const parentPrefix = sanitizePath(parent);
-  const existingNames = new Set<string>();
-
-  if (parentPrefix || parent === "") {
-    const listing = await listMedia(parentPrefix);
-    for (const file of listing.files) {
-      if (file.key === normalizedKey) continue;
-      const name = file.key.split("/").pop();
-      if (name) existingNames.add(name);
-    }
-  }
+  const parentPrefix = normalizeStoredPrefix(parent, "parent folder");
+  const existingNames = await listExistingFileNames(parentPrefix, { excludeKey: normalizedKey });
 
   const finalName = buildUniqueFileName(baseName, extension, existingNames);
 
-  const newKey = parent ? `${sanitizePath(parent)}/${finalName}` : finalName;
+  const newKey = parent ? `${parentPrefix}/${finalName}` : finalName;
 
   if (newKey === normalizedKey) {
     return {
@@ -240,12 +297,10 @@ export async function renameFile(key: string, newName: string) {
     } satisfies MediaFile;
   }
 
-  const sourceKey = buildObjectKey(normalizedKey);
-  const targetKey = buildObjectKey(newKey);
+  await assertFileDestinationDoesNotConflictWithFolder(newKey);
+  await copyObjectWithinBucket(normalizedKey, newKey);
 
-  await copyObjectWithinBucket(sourceKey, targetKey);
-
-  const deleteUrl = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${sourceKey}`);
+  const deleteUrl = buildObjectUrl(normalizedKey);
   const deleteResponse = await signedFetch(deleteUrl, { method: "DELETE" });
   if (!deleteResponse.ok && deleteResponse.status !== 404) {
     throw new Error(
@@ -256,30 +311,40 @@ export async function renameFile(key: string, newName: string) {
   clearUsageCache();
   return {
     key: newKey,
-    url: encodeKeyForUrl(targetKey, getEnv().R2_PUBLIC_BASE),
-    type: inferType(targetKey),
+    url: encodeKeyForUrl(newKey, getEnv().R2_PUBLIC_BASE),
+    type: inferType(newKey),
   } satisfies MediaFile;
 }
 
 // 重新命名資料夾 (遞迴移動所有子項目)
 export async function renameFolder(key: string, newName: string) {
-  const normalizedKey = normalizePath(key);
+  const normalizedKey = normalizeStoredKey(key, "folder key");
   const parts = normalizedKey.split("/");
   const parent = parts.slice(0, -1).join("/");
+  const parentPrefix = normalizeStoredPrefix(parent, "parent folder");
+  const normalizedName = normalizeNewName(newName, "folder name");
   const newFolderPath = parent
-    ? `${sanitizePath(parent)}/${sanitizeName(newName)}`
-    : sanitizeName(newName);
+    ? `${parentPrefix}/${normalizedName}`
+    : normalizedName;
+
+  if (newFolderPath === normalizedKey) {
+    return {
+      key: newFolderPath,
+      name: newFolderPath.split("/").pop() || newFolderPath,
+    } satisfies FolderItem;
+  }
+
+  await assertFolderDestinationAvailable(newFolderPath);
 
   const sourcePrefix = buildFolderKey(normalizedKey);
   const targetPrefix = buildFolderKey(newFolderPath);
-
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
 
-  await Promise.all(
-    keys.map((sourceKey) => {
-      const targetKey = sourceKey.replace(sourcePrefix, targetPrefix);
-      return copyObjectWithinBucket(sourceKey, targetKey);
-    }),
+  await copyObjectsInBatches(
+    keys.map((sourceKey) => ({
+      sourceKey,
+      targetKey: sourceKey.replace(sourcePrefix, targetPrefix),
+    })),
   );
 
   await deleteObjects(keys);
@@ -295,11 +360,11 @@ export async function renameFolder(key: string, newName: string) {
 
 // 移動檔案
 export async function moveFile(key: string, targetPrefix: string) {
-  const normalizedKey = normalizePath(key);
+  const normalizedKey = normalizeStoredKey(key, "file key");
   const filename = normalizedKey.split("/").pop();
   if (!filename) throw new Error("Invalid file name");
 
-  const safeTargetPrefix = sanitizePath(targetPrefix);
+  const safeTargetPrefix = normalizeStoredPrefix(targetPrefix, "target folder");
   const existingNames = await listExistingFileNames(safeTargetPrefix, {
     excludeKey: normalizedKey,
   });
@@ -316,9 +381,10 @@ export async function moveFile(key: string, targetPrefix: string) {
     } satisfies MediaFile;
   }
 
+  await assertFileDestinationDoesNotConflictWithFolder(newKey);
   await copyObjectWithinBucket(normalizedKey, newKey);
 
-  const deleteUrl = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${normalizedKey}`);
+  const deleteUrl = buildObjectUrl(normalizedKey);
   const deleteResponse = await signedFetch(deleteUrl, { method: "DELETE" });
   if (!deleteResponse.ok && deleteResponse.status !== 404) {
     throw new Error(
@@ -336,14 +402,28 @@ export async function moveFile(key: string, targetPrefix: string) {
 
 // 移動資料夾
 export async function moveFolder(key: string, targetPrefix: string) {
-  const normalizedKey = normalizePath(key);
+  const normalizedKey = normalizeStoredKey(key, "folder key");
   const folderName = normalizedKey.split("/").pop();
   if (!folderName) throw new Error("Invalid folder");
 
-  const safeTargetPrefix = sanitizePath(targetPrefix);
+  const safeTargetPrefix = normalizeStoredPrefix(targetPrefix, "target folder");
+  const parent = normalizedKey.split("/").slice(0, -1).join("/");
+
+  if (safeTargetPrefix === parent) {
+    return {
+      key: normalizedKey,
+      name: folderName,
+    } satisfies FolderItem;
+  }
+
+  if (isSameOrDescendantPath(safeTargetPrefix, normalizedKey)) {
+    throw new Error("Cannot move a folder into itself or one of its descendants");
+  }
+
   const targetFolderPath = safeTargetPrefix
     ? `${safeTargetPrefix}/${folderName}`
     : folderName;
+  await assertFolderDestinationAvailable(targetFolderPath);
 
   const sourcePrefix = buildFolderKey(normalizedKey);
   const targetPrefixKey = buildFolderKey(targetFolderPath);
@@ -377,11 +457,7 @@ export async function moveFolder(key: string, targetPrefix: string) {
     copyTasks.push({ sourceKey, targetKey: resolvedTargetKey });
   }
 
-  await Promise.all(
-    copyTasks.map(({ sourceKey, targetKey }) =>
-      copyObjectWithinBucket(sourceKey, targetKey),
-    ),
-  );
+  await copyObjectsInBatches(copyTasks);
 
   await deleteObjects(keys);
 
@@ -397,11 +473,11 @@ export async function moveFolder(key: string, targetPrefix: string) {
 // 解包資料夾：把整個子樹「上移一層」到父層（保留子資料夾結構、含重名自動編號），
 // 再移除原本的資料夾與其標記。內容不會被刪除，較安全。
 export async function dissolveFolder(folderKey: string) {
-  const normalizedKey = normalizePath(folderKey);
+  const normalizedKey = normalizeStoredKey(folderKey, "folder key");
   const parent = normalizedKey.split("/").slice(0, -1).join("/");
 
   const sourcePrefix = buildFolderKey(normalizedKey); // 例如 "trip/"
-  const targetPrefixKey = buildFolderKey(sanitizePath(parent)); // 父層 "" 或 "2024/"
+  const targetPrefixKey = buildFolderKey(parent); // 父層 "" 或 "2024/"
 
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
   if (keys.length === 0) return;
@@ -434,9 +510,7 @@ export async function dissolveFolder(folderKey: string) {
     });
   }
 
-  await Promise.all(
-    copyTasks.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey)),
-  );
+  await copyObjectsInBatches(copyTasks);
 
   await deleteObjects(keys);
 }
@@ -449,7 +523,7 @@ export async function batchDelete(items: { key: string; isFolder: boolean }[]) {
     if (item.isFolder) {
       await dissolveFolder(item.key);
     } else {
-      fileKeys.add(normalizePath(item.key));
+      fileKeys.add(normalizeStoredKey(item.key, "file key"));
     }
   }
 

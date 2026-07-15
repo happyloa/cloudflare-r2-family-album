@@ -69,18 +69,19 @@ export function MediaGrid() {
     setSortDir,
     visibleFiles,
     hasMore,
+    loadingMore,
     loadMore,
     filteredFiles,
     filterVisible,
     searchEnabled
   } = useMediaData({ pushMessage });
 
-  const usage = useBucketUsage();
 
   const { adminTokenRef, isAdmin, clearAdminSession, requestAdminToken, authorizedFetch } = useAdminAuth({
     pushMessage,
     openPassword
   });
+  const usage = useBucketUsage(isAdmin, authorizedFetch);
 
   const {
     handleCreateFolder,
@@ -330,6 +331,7 @@ export function MediaGrid() {
         currentPrefix={currentPrefix}
         foldersCount={folders.length}
         filesCount={files.length}
+        hasMore={hasMore}
         onBack={handleBack}
         onRefresh={() => loadMedia(currentPrefix)}
         onNavigate={setCurrentPrefix}
@@ -362,7 +364,7 @@ export function MediaGrid() {
         <MediaSkeleton />
       ) : (
         <>
-          {!hasItems && <EmptyState atMaxDepth={depth >= MAX_FOLDER_DEPTH} />}
+          {!hasItems && !hasMore && <EmptyState atMaxDepth={depth >= MAX_FOLDER_DEPTH} />}
 
           <FolderGrid
             folders={folders}
@@ -391,6 +393,7 @@ export function MediaGrid() {
             files={filteredFiles}
             visibleFiles={visibleFiles}
             hasMore={hasMore}
+            loadingMore={loadingMore}
             onLoadMore={loadMore}
             onSelect={(file, trigger) => setPreview({ media: file, trigger })}
             filterLabel={filterLabel}
@@ -419,6 +422,14 @@ export function MediaGrid() {
               handleItemDragEnd();
             }}
           />
+          {hasMore && files.length === 0 ? (
+            <div className="flex justify-center py-6" aria-live="polite">
+              <button type="button" onClick={loadMore} disabled={loadingMore} className="flex items-center gap-2 rounded-full border border-surface-700 bg-surface-800/80 px-4 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-wait disabled:opacity-60">
+                {loadingMore ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden /> : null}
+                <span>{loadingMore ? '\u8f09\u5165\u4e2d\u2026' : '\u8f09\u5165\u66f4\u591a'}</span>
+              </button>
+            </div>
+          ) : null}
         </>
       )}
 

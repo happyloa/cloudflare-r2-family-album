@@ -7,6 +7,7 @@ export function BreadcrumbNav({
   currentPrefix,
   foldersCount,
   filesCount,
+  hasMore,
   onBack,
   onRefresh,
   onNavigate,
@@ -16,6 +17,7 @@ export function BreadcrumbNav({
   currentPrefix: string;
   foldersCount: number;
   filesCount: number;
+  hasMore: boolean;
   onBack: () => void;
   onRefresh: () => void;
   onNavigate: (key: string) => void;
@@ -77,6 +79,7 @@ export function BreadcrumbNav({
         {/* 右側：統計與重整 */}
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* 統計資訊 */}
+          {hasMore ? <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">{'\u5df2\u8f09\u5165'}</span> : null}
           <span className="text-xs text-surface-400">
             <span className="text-surface-300">{foldersCount}</span> 資料夾
             <span className="mx-1.5 text-surface-600">·</span>

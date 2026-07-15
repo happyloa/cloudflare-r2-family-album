@@ -46,7 +46,7 @@ export function Toolbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <UsageBar usageBytes={usageBytes} loading={usageLoading} error={usageError} />
+        {isAdmin ? <UsageBar usageBytes={usageBytes} loading={usageLoading} error={usageError} /> : null}
 
         {isAdmin ? (
           <>

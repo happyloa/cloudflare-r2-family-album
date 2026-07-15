@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { requireAdmin } from '@/lib/ensure-admin';
 import { calculateBucketUsage } from '@/lib/r2';
 
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {
+    const authError = await requireAdmin(request);
+    if (authError) return authError;
+
     const force = request.nextUrl.searchParams.get("force") === "true";
     const usage = await calculateBucketUsage(force);
     return NextResponse.json(usage);

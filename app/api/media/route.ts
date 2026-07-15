@@ -85,7 +85,28 @@ export function validateMoveTarget(
 export async function GET(request: NextRequest) {
   try {
     const prefix = request.nextUrl.searchParams.get("prefix") || "";
-    const media = await listMedia(prefix);
+    const limitParam = request.nextUrl.searchParams.get("limit");
+    const cursor = request.nextUrl.searchParams.get("cursor") || undefined;
+
+    if (cursor && (cursor.length > 2048 || /[\u0000-\u001f]/.test(cursor))) {
+      return NextResponse.json(
+        { error: "Invalid media cursor", code: "INVALID_CURSOR" },
+        { status: 400 },
+      );
+    }
+
+    const limit = limitParam === null ? undefined : Number(limitParam);
+    if (
+      limitParam !== null &&
+      (!/^\d+$/.test(limitParam) || !Number.isInteger(limit ?? Number.NaN) || (limit ?? 0) < 1 || (limit ?? 201) > 200)
+    ) {
+      return NextResponse.json(
+        { error: "The page size must be between 1 and 200", code: "INVALID_LIMIT" },
+        { status: 400 },
+      );
+    }
+
+    const media = await listMedia(prefix, { cursor, limit });
     return NextResponse.json(media);
   } catch (error) {
     console.error("Failed to list media", error);

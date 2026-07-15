@@ -22,6 +22,7 @@ export function MediaSection({
   files,
   visibleFiles,
   hasMore,
+  loadingMore,
   onLoadMore,
   onSelect,
   filterLabel,
@@ -48,6 +49,7 @@ export function MediaSection({
   files: MediaFile[];
   visibleFiles: MediaFile[];
   hasMore: boolean;
+  loadingMore: boolean;
   onLoadMore: () => void;
   onSelect: (file: MediaFile, trigger: HTMLElement) => void;
   filterLabel: string;
@@ -306,8 +308,11 @@ export function MediaSection({
 
       {/* 無限捲動 sentinel */}
       {hasMore ? (
-        <div ref={sentinelRef} className="flex items-center justify-center py-6" aria-hidden>
-          <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" />
+        <div ref={sentinelRef} className="flex items-center justify-center py-6" aria-live="polite">
+          <button type="button" onClick={onLoadMore} disabled={loadingMore} className="flex items-center gap-2 rounded-full border border-surface-700 bg-surface-800/80 px-4 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-wait disabled:opacity-60">
+            {loadingMore ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden /> : null}
+            <span>{loadingMore ? '\u8f09\u5165\u4e2d\u2026' : '\u8f09\u5165\u66f4\u591a'}</span>
+          </button>
         </div>
       ) : files.length > 0 ? (
         <p className="py-4 text-center text-xs text-surface-600">已顯示全部 {files.length} 個媒體</p>

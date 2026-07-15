@@ -1,7 +1,7 @@
 import { AwsClient } from "aws4fetch";
 import { XMLParser } from "fast-xml-parser";
 
-import { sanitizePath } from "../path";
+import { hasPeriodOnlyPathSegment } from "../path";
 
 // ── 型別 ──
 
@@ -29,6 +29,7 @@ export type MediaListing = {
   prefix: string;
   folders: FolderItem[];
   files: MediaFile[];
+  nextCursor: string | null;
 };
 
 export type BucketUsage = {
@@ -122,28 +123,34 @@ export function buildFolderKey(path: string) {
   const normalized = normalizePath(path);
   return normalized ? `${normalized}/` : "";
 }
+function encodeR2PathSegment(segment: string) {
+  if (segment === ".") return "%2E";
+  if (segment === "..") return "%2E%2E";
+  return encodeURIComponent(segment);
+}
+
+export function encodeR2ObjectKey(key: string) {
+  return key.split("/").map(encodeR2PathSegment).join("/");
+}
+
+function assertSafeEndpointObjectKey(key: string) {
+  if (hasPeriodOnlyPathSegment(key)) {
+    throw new Error("Period-only R2 key segments cannot be addressed safely");
+  }
+}
+
 
 // 將 Key 編碼為公開 URL
 export function encodeKeyForUrl(key: string, base: string) {
   const url = new URL(base);
-  const decodedBasePath = decodeURI(url.pathname || "/").replace(/\/+$/, "");
-
-  const encodedKey = key
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-
-  url.pathname = [decodedBasePath, encodedKey].filter(Boolean).join("/");
-  return url.toString();
+  const basePath = url.pathname.replace(/\/+$/, "");
+  const encodedKey = encodeR2ObjectKey(key);
+  return `${url.origin}${basePath}/${encodedKey}${url.search}`;
 }
 
 // 編碼用於 Copy Source 的 Header
 function encodeCopySource(bucket: string, key: string) {
-  return `/${bucket}/${key
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/")}`;
+  return `/${encodeURIComponent(bucket)}/${encodeR2ObjectKey(key)}`;
 }
 
 // 跳脫 XML 特殊字元
@@ -193,16 +200,31 @@ export function buildEndpointPath(path: string) {
   return new URL(path, endpoint).toString();
 }
 
+export function buildObjectUrl(key: string) {
+  assertSafeEndpointObjectKey(key);
+  const env = getEnv();
+  const endpoint = `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+  const bucket = encodeURIComponent(env.R2_BUCKET_NAME);
+  return `${endpoint}/${bucket}/${encodeR2ObjectKey(key)}`;
+}
+
 // 建構 List Objects URL
 export function buildListUrl(
   prefix: string,
-  options: { continuationToken?: string; delimiter?: string } = {},
+  options: {
+    continuationToken?: string;
+    delimiter?: string;
+    maxKeys?: number;
+  } = {},
 ) {
   const url = new URL(buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}`));
   url.searchParams.set("list-type", "2");
   url.searchParams.set("prefix", prefix);
   if (options.delimiter) {
     url.searchParams.set("delimiter", options.delimiter);
+  }
+  if (options.maxKeys) {
+    url.searchParams.set("max-keys", String(options.maxKeys));
   }
   if (options.continuationToken) {
     url.searchParams.set("continuation-token", options.continuationToken);
@@ -295,7 +317,7 @@ export async function collectKeys(
 ) {
   const keys: string[] = [];
   let continuationToken: string | undefined;
-  const searchPrefix = buildFolderKey(sanitizePath(prefix));
+  const searchPrefix = buildFolderKey(normalizePath(prefix));
 
   do {
     const url = buildListUrl(searchPrefix, { continuationToken });
@@ -317,6 +339,15 @@ export async function collectKeys(
   } while (continuationToken);
 
   return keys;
+}
+
+export async function objectExists(key: string) {
+  const response = await signedFetch(buildObjectUrl(key), { method: "HEAD" });
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    throw new Error(`Failed to check object: ${response.status} ${response.statusText}`);
+  }
+  return true;
 }
 
 // 批次刪除物件（支援進度回報）
@@ -347,6 +378,15 @@ export async function deleteObjects(
       body: deleteBody,
     });
 
+    const resultXml = await deleteResponse.text();
+    if (resultXml.trim()) {
+      const deleteResult = xmlParser.parse(resultXml).DeleteResult;
+      const errors = ensureArray(deleteResult?.Error);
+      if (errors.length) {
+        throw new Error("R2 reported one or more failed object deletions");
+      }
+    }
+
     if (!deleteResponse.ok) {
       throw new Error(
         `Failed to delete objects: ${deleteResponse.status} ${deleteResponse.statusText}`,
@@ -360,7 +400,8 @@ export async function deleteObjects(
 
 // 在 Bucket 內複製物件
 export async function copyObjectWithinBucket(sourceKey: string, targetKey: string) {
-  const copyUrl = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}/${targetKey}`);
+  assertSafeEndpointObjectKey(sourceKey);
+  const copyUrl = buildObjectUrl(targetKey);
   const copyResponse = await signedFetch(copyUrl, {
     method: "PUT",
     headers: {

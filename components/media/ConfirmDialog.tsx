@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { ConfirmRequest } from './hooks/useDialogs';
 
@@ -11,17 +11,32 @@ export function ConfirmDialog({
   request: ConfirmRequest | null;
   onClose: (value: boolean) => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!request) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.classList.add('modal-open');
+    const focusTimer = window.setTimeout(() => {
+      dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    }, 0);
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose(false);
-      if (event.key === 'Enter') onClose(true);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose(false);
+        return;
+      }
+      if (event.key === 'Enter' && document.activeElement === confirmButtonRef.current) {
+        event.preventDefault();
+        onClose(true);
+      }
     };
     document.addEventListener('keydown', handleKey);
     return () => {
+      window.clearTimeout(focusTimer);
       document.body.classList.remove('modal-open');
       document.removeEventListener('keydown', handleKey);
+      previousFocus?.focus();
     };
   }, [request, onClose]);
 
@@ -35,6 +50,7 @@ export function ConfirmDialog({
       onClick={() => onClose(false)}
     >
       <div
+        ref={dialogRef}
         className="w-[min(440px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
       >
@@ -51,6 +67,7 @@ export function ConfirmDialog({
             {request.cancelLabel}
           </button>
           <button
+            ref={confirmButtonRef}
             type="button"
             onClick={() => onClose(true)}
             className={`rounded-full px-5 py-2 text-sm font-semibold transition-all duration-200 cursor-pointer ${

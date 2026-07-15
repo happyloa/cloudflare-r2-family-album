@@ -1,7 +1,7 @@
 node_modules
 .next
-.env
-.env.local
+.env*
+!.env.example
 *.log
 .cache
 out

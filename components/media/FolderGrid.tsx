@@ -80,8 +80,8 @@ export function FolderGrid({
   if (!folders.length) return null;
 
   // 預設只展開第一組（最新年份），其餘收合
-  const isGroupExpanded = (year: string, index: number) =>
-    collapsedGroups[year] !== undefined ? !collapsedGroups[year] : index === 0;
+  const isGroupExpanded = (year: string, _index: number) =>
+    collapsedGroups[year] !== undefined ? !collapsedGroups[year] : true;
   const toggleGroup = (year: string, index: number) =>
     setCollapsedGroups((prev) => ({ ...prev, [year]: isGroupExpanded(year, index) }));
 
