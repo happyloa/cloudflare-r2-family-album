@@ -42,7 +42,9 @@ const contentSecurityPolicy = [
   isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
+  // 前端沒有任何地方直接對 R2 網域發起 fetch/XHR（媒體都是走 <img>/<video> 的
+  // img-src/media-src），所以收斂到跟那兩者一樣的網域範圍即可，不需要開放整個 https:。
+  `connect-src 'self' ${r2Origin ?? "https:"}`,
   `img-src 'self' data: blob: ${r2Origin ?? "https:"}`,
   `media-src 'self' data: blob: ${r2Origin ?? "https:"}`,
 ].join("; ");
