@@ -26,7 +26,7 @@ components/
   media/               # 媒體 UI：FolderGrid、MediaSection、Toolbar、各 Modal、ContextMenu…
     hooks/             # useMediaData / useAdminAuth / useMediaActions / useMediaDragDrop /
                        # useSelection / useContextMenu / useDialogs / useDropUpload /
-                       # useUndoableDelete / useBucketUsage / useLongPress / useMessage
+                       # useUndoableDelete / useBucketUsage / useFocusTrap / useLongPress / useMessage
 lib/
   r2/                  # Cloudflare R2 操作（core / queries / mutations，使用 aws4fetch）
   constants.ts         # 跨前後端共用的資料夾規則常數（深度 / 名稱長度上限）
@@ -80,7 +80,7 @@ lib/
 | POST   | `/api/media`         | 建立資料夾 / 驗證管理密碼                   | `x-admin-token` |
 | PATCH  | `/api/media`         | 重新命名 / 移動 / 批次移動                 | `x-admin-token` |
 | DELETE | `/api/media`         | 刪除 / 批次刪除（檔案或資料夾）            | `x-admin-token` |
-| GET    | `/api/media/usage`   | 取得儲存貯體 (Bucket) 已使用容量           | 不需            |
+| GET    | `/api/media/usage`   | 取得儲存貯體 (Bucket) 已使用容量           | `x-admin-token` |
 | POST   | `/api/upload`        | 上傳圖片 / 影片                            | `x-admin-token` |
 
 ## 部署建議（Cloudflare Pages）
@@ -88,3 +88,8 @@ lib/
 1. 在 Pages 專案設定中新增上述環境變數
 2. `next.config.mjs` 已配置 Edge Runtime，無需額外調整
 3. 若使用自訂網域，確認 `R2_PUBLIC_BASE` 與實際公開位址一致
+4. Build command 固定用 `npx @cloudflare/next-on-pages@1`；已停止維護（deprecated），但因專案用的是
+   Cloudflare Pages 而非 Workers Builds，這仍是目前正確的部署方式，**不要**改成 OpenNext / Workers 相關設定
+5. 根目錄的 `.npmrc`（`legacy-peer-deps=true`）是刻意保留的設定，用來化解 next-on-pages 與
+   wrangler 之間的 `@cloudflare/workers-types` 版本衝突（4.x vs 5.x）。這個檔案曾在一次例行的
+   「更新套件」中被誤刪並直接導致部署失敗，**請勿**在整理依賴時順手移除
