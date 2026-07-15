@@ -29,9 +29,6 @@ function parseBatchItems(value: unknown): BatchItem[] | null {
   return items;
 }
 
-// 設定 Edge Runtime 以相容 Cloudflare Pages 部署
-export const runtime = "edge";
-
 // 驗證建立資料夾請求
 export function validateCreateFolder(prefix: string, name: string | undefined) {
   if (!name) return "資料夾名稱不可為空";

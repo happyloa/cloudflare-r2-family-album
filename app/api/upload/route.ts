@@ -9,9 +9,6 @@ import {
   getSizeLimitByMime,
 } from "@/lib/upload/constants";
 
-// 使用 Edge Runtime 以符合 Cloudflare Pages 的執行環境。
-export const runtime = "edge";
-
 /**
  * POST: 處理檔案上傳
  * 支援多檔案上傳，會先驗證大小與格式，再寫入 R2

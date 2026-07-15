@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy -- --keep-vars",
     "start": "next start"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "1.20.1",
     "aws4fetch": "^1.0.20",
     "fast-xml-parser": "^5.10.0",
     "next": "^16.2.10",
@@ -20,7 +24,8 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "tailwindcss": "^4.3.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "4.110.0"
   },
   "overrides": {
     "next": {

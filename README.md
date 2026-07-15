@@ -12,12 +12,12 @@
 - **移動方式**：拖曳到資料夾或「上一層」，或用資料夾選擇器（瀏覽式）挑選目的地。
 - **樂觀更新**：移動 / 刪除 / 重新命名會即時反映於畫面，再於背景與 R2 對帳，避免等待感。
 - **Session 安全性**：管理模式僅存於 sessionStorage，15 分鐘未操作會自動失效。
-- **Cloudflare Pages 友善**：所有 API 以 Edge Runtime 實作，可直接部署到 Pages。
+- **Cloudflare Workers 相容**：以 OpenNext 部署 Next.js 16 的完整 API，持續只使用既有 R2 bucket。
 
 ## 專案結構
 
 ```
-app/                   # Next.js App Router 頁面與 API Routes（Edge Runtime）
+app/                   # Next.js App Router 頁面與 API Routes
   api/media/           # 列表 / 建立 / 重新命名 / 移動 / 刪除（含批次）
   api/media/usage/     # 貯體已使用容量
   api/upload/          # 圖片 / 影片上傳
@@ -37,7 +37,7 @@ lib/
 
 ## 需求與相依
 
-- Node.js 20+ 與 npm
+- Node.js 22+ 與 npm
 - Next.js 16、React 19、TypeScript、Tailwind CSS 4
 - Cloudflare R2（含 Access Key / Secret Key）
 
@@ -57,6 +57,8 @@ lib/
    ```
 4. 其他腳本：
    - `npm run build`：產生生產環境建置成果
+   - `npm run build:worker`：產生 Cloudflare Workers 的部署成果
+   - `npm run preview`：本機預覽 Workers 版建置
 
 ## 環境變數
 
@@ -83,8 +85,13 @@ lib/
 | GET    | `/api/media/usage`   | 取得儲存貯體 (Bucket) 已使用容量           | 不需            |
 | POST   | `/api/upload`        | 上傳圖片 / 影片                            | `x-admin-token` |
 
-## 部署建議（Cloudflare Pages）
+## 部署（Cloudflare Workers Builds）
 
-1. 在 Pages 專案設定中新增上述環境變數
-2. `next.config.mjs` 已配置 Edge Runtime，無需額外調整
-3. 若使用自訂網域，確認 `R2_PUBLIC_BASE` 與實際公開位址一致
+此專案使用 OpenNext 部署到 Workers Builds，不使用已淘汰的 `@cloudflare/next-on-pages`。設定新的 Workers Builds 專案時：
+
+1. 建置命令設為 `npm run build:worker`；部署命令設為 `npx opennextjs-cloudflare deploy -- --keep-vars`。
+2. 在 **Runtime variables / secrets** 設定上表所有必填 R2 與管理員變數；`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`ADMIN_ACCESS_TOKEN` 必須設為 secret。
+3. 在 **Build variables** 至少設定 `R2_PUBLIC_BASE`，讓建置期的 CSP 與圖片來源設定一致；若使用 `NEXT_PUBLIC_MAX_*` 也一併設定。
+4. 若使用自訂網域，確認 `R2_PUBLIC_BASE` 與實際公開位址一致。
+
+`wrangler.jsonc` 不宣告 R2、KV、D1、Queue 或 Cloudflare Images binding；部署不會讀寫既有相簿 R2 物件。
