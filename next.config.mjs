@@ -29,7 +29,7 @@ const customPattern = (() => {
 // 兩者共用同一個 R2 公開網域，找不到時才退回較寬鬆的 https: 當保險。
 const r2Origin = customUrl ? `${customUrl.protocol}//${customUrl.host}` : null;
 
-// 注意：public/_headers 是給 Cloudflare 靜態資產的備援（避免 headers() 在某些情境下沒生效），
+// 注意：public/_headers 是給 Cloudflare Pages 的靜態備援（避免 headers() 在某些情境下沒生效），
 // 內容需要跟下面這份手動保持同步；但那個檔案是純靜態的，沒辦法讀 R2_PUBLIC_BASE，
 // img-src/media-src 只能固定用 https:（等同這裡 r2Origin 找不到時的保險值）。
 const contentSecurityPolicy = [
@@ -53,8 +53,6 @@ const remotePatterns = customPattern ? [customPattern] : [];
 const nextConfig = {
   images: {
     remotePatterns,
-    // 不啟用 Cloudflare Images，直接使用既有 R2 公開原檔。
-    unoptimized: true,
   },
   async headers() {
     return [

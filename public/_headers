@@ -5,6 +5,3 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   X-Content-Type-Options: nosniff
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
-
-/_next/static/*
-  Cache-Control: public, max-age=31536000, immutable

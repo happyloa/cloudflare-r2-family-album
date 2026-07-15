@@ -7,7 +7,3 @@ node_modules
 out
 coverage
 tsconfig.tsbuildinfo
-.open-next
-.wrangler
-.dev.vars*
-!.dev.vars.example
