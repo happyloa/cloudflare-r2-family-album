@@ -41,14 +41,38 @@ export function ContextMenu({
     setPos({ x: Math.max(margin, nextX), y: Math.max(margin, nextY) });
   }, [open, x, y]);
 
+  // 開啟時把 focus 移入選單、補上方向鍵在項目間移動；關閉時把焦點還給觸發前的元素，
+  // 讓鍵盤使用者不必再 Tab 過整個頁面才能到達剛開出來的選單。
   useEffect(() => {
     if (!open) return;
+
+    const getMenuItems = () =>
+      Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []).filter(
+        (item) => !item.disabled
+      );
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusTimer = window.setTimeout(() => {
+      getMenuItems()[0]?.focus();
+    }, 0);
 
     const handlePointerDown = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) onClose();
     };
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+      const items = getMenuItems();
+      if (items.length === 0) return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + items.length) % items.length;
+      items[nextIndex]?.focus();
     };
     const handleScroll = () => onClose();
 
@@ -57,10 +81,14 @@ export function ContextMenu({
     window.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', handleScroll);
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKey);
       window.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', handleScroll);
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
     };
   }, [open, onClose]);
 

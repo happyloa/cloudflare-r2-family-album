@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { UsageBar } from './UsageBar';
 
 /**
@@ -27,6 +28,16 @@ export function Toolbar({
   onCreateFolder: () => void;
 }) {
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const menuRef = useFocusTrap<HTMLDivElement>(newMenuOpen);
+
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNewMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [newMenuOpen]);
 
   return (
     // relative z-30 讓「＋ 新增」下拉選單能浮在麵包屑之上（glass-card 的 backdrop-filter 會建立堆疊脈絡）
@@ -67,6 +78,7 @@ export function Toolbar({
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setNewMenuOpen(false)} aria-hidden />
                   <div
+                    ref={menuRef}
                     role="menu"
                     className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-2xl border border-surface-700/70 bg-surface-900/95 py-1.5 shadow-2xl ring-1 ring-white/5 backdrop-blur-md animate-modal-content-in"
                   >

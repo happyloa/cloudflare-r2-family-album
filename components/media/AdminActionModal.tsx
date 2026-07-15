@@ -3,6 +3,8 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { useFocusTrap } from './hooks/useFocusTrap';
+
 export type AdminActionType = 'rename' | 'move' | 'delete';
 
 export type AdminActionTarget = {
@@ -37,6 +39,7 @@ export function AdminActionModal({
   onConfirm
 }: AdminActionModalProps) {
   const isRename = action === 'rename' && Boolean(target);
+  const formRef = useFocusTrap<HTMLFormElement>(isRename);
 
   const currentName = useMemo(() => {
     if (!target) return '';
@@ -122,14 +125,13 @@ export function AdminActionModal({
           <p className="mt-1 text-sm text-surface-400">對象：{currentName || target.key}</p>
         </div>
 
-        <form className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
+        <form ref={formRef} className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <label className="text-sm font-medium text-surface-200" htmlFor="rename-input">
               新名稱
             </label>
             <input
               id="rename-input"
-              autoFocus
               className="w-full rounded-2xl border border-surface-700 bg-surface-900/80 px-4 py-3 text-sm text-surface-100 outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
               inputMode="text"
               autoComplete="off"

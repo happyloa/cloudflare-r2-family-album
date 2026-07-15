@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { PasswordRequest } from './hooks/useDialogs';
 
 export function PasswordPromptModal({
@@ -16,7 +17,7 @@ export function PasswordPromptModal({
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useFocusTrap<HTMLFormElement>(Boolean(request));
 
   useEffect(() => {
     if (!request) return;
@@ -24,10 +25,8 @@ export function PasswordPromptModal({
     setError('');
     setSubmitting(false);
     document.body.classList.add('modal-open');
-    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => {
       document.body.classList.remove('modal-open');
-      window.clearTimeout(focusTimer);
     };
   }, [request]);
 
@@ -55,7 +54,7 @@ export function PasswordPromptModal({
       } else {
         setError('管理密碼不正確，請再試一次。');
         setSubmitting(false);
-        inputRef.current?.select();
+        formRef.current?.querySelector<HTMLInputElement>('input[type="password"]')?.select();
       }
     } catch {
       setError('驗證時發生錯誤，請稍後再試。');
@@ -71,6 +70,7 @@ export function PasswordPromptModal({
       onClick={() => onClose(false)}
     >
       <form
+        ref={formRef}
         className="w-[min(420px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
@@ -81,7 +81,6 @@ export function PasswordPromptModal({
           <p className="text-sm text-surface-400">{request.message}</p>
         </div>
         <input
-          ref={inputRef}
           type="password"
           maxLength={maxLength}
           value={value}

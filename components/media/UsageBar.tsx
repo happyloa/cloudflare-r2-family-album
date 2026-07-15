@@ -1,6 +1,6 @@
 'use client';
 
-const BUCKET_LIMIT_BYTES = 10 * 1024 * 1024 * 1024; // 10GB
+import { BUCKET_LIMIT_BYTES } from './constants';
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return '0B';
@@ -26,13 +26,14 @@ export function UsageBar({
   const total = usageBytes ?? 0;
   const overLimit = usageBytes !== null && total > BUCKET_LIMIT_BYTES;
   const percent = Math.min((total / BUCKET_LIMIT_BYTES) * 100, 100);
-  const label = usageBytes === null ? (loading ? '讀取中…' : '—') : `${formatBytes(total)} / 10GB`;
+  const hasError = Boolean(error) && usageBytes === null;
+  const label = usageBytes === null ? (loading ? '讀取中…' : hasError ? '讀取失敗' : '—') : `${formatBytes(total)} / 10GB`;
 
   return (
     <div className="flex min-w-[160px] flex-col gap-1" title={error || '貯體已使用容量'}>
       <div className="flex items-center justify-between gap-2 text-xs font-semibold">
         <span className="text-surface-500">容量</span>
-        <span className={overLimit ? 'text-red-300' : 'text-surface-300'}>{label}</span>
+        <span className={overLimit || hasError ? 'text-red-300' : 'text-surface-300'}>{label}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-800">
         <div
@@ -42,6 +43,7 @@ export function UsageBar({
           style={{ width: `${percent}%` }}
         />
       </div>
+      {hasError ? <p className="text-[11px] leading-tight text-red-300/90">{error}</p> : null}
     </div>
   );
 }

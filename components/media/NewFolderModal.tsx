@@ -1,8 +1,9 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 import { MAX_FOLDER_NAME_LENGTH } from './constants';
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { sanitizeName } from './sanitize';
 
 export function NewFolderModal({
@@ -16,21 +17,19 @@ export function NewFolderModal({
 }) {
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useFocusTrap<HTMLFormElement>(open);
 
   useEffect(() => {
     if (!open) return;
     setValue('');
     setSubmitting(false);
     document.body.classList.add('modal-open');
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 50);
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCancel();
     };
     document.addEventListener('keydown', handleKey);
     return () => {
       document.body.classList.remove('modal-open');
-      window.clearTimeout(timer);
       document.removeEventListener('keydown', handleKey);
     };
   }, [open, onCancel]);
@@ -61,6 +60,7 @@ export function NewFolderModal({
       onClick={onCancel}
     >
       <form
+        ref={formRef}
         className="w-[min(440px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
@@ -71,7 +71,6 @@ export function NewFolderModal({
           <p className="text-sm text-surface-400">會建立在目前位置，最多兩層、名稱最多 {MAX_FOLDER_NAME_LENGTH} 個字。</p>
         </div>
         <input
-          ref={inputRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="輸入資料夾名稱（例如：taiwan-trip）"

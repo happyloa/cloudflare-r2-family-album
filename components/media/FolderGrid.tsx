@@ -204,7 +204,7 @@ export function FolderGrid({
               event.stopPropagation();
               onContextMenu(event, { key: folder.key, isFolder: true });
             }}
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-surface-300 opacity-0 transition-all duration-150 hover:bg-surface-900/70 hover:text-white group-hover:opacity-100 cursor-pointer"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-surface-300 opacity-0 transition-all duration-150 hover:bg-surface-900/70 hover:text-white group-hover:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
             aria-label="更多操作"
           >
             <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { ConfirmRequest } from './hooks/useDialogs';
 
 export function ConfirmDialog({
@@ -11,15 +12,11 @@ export function ConfirmDialog({
   request: ConfirmRequest | null;
   onClose: (value: boolean) => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(Boolean(request));
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!request) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.classList.add('modal-open');
-    const focusTimer = window.setTimeout(() => {
-      dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
-    }, 0);
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -33,10 +30,8 @@ export function ConfirmDialog({
     };
     document.addEventListener('keydown', handleKey);
     return () => {
-      window.clearTimeout(focusTimer);
       document.body.classList.remove('modal-open');
       document.removeEventListener('keydown', handleKey);
-      previousFocus?.focus();
     };
   }, [request, onClose]);
 

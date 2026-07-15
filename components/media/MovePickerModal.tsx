@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useFocusTrap } from './hooks/useFocusTrap';
 import { getDepth } from './sanitize';
 import { FolderItem, MediaResponse } from './types';
 
@@ -52,6 +53,7 @@ export function MovePickerModal({
   const loadingMoreRef = useRef(false);
   const mountedRef = useRef(true);
   const resettingPrefixRef = useRef(false);
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
 
   const movingFolder = items.some((item) => item.isFolder);
   const sourceFolderKeys = useMemo(
@@ -271,6 +273,7 @@ export function MovePickerModal({
       onClick={onCancel}
     >
       <div
+        ref={dialogRef}
         className="flex w-[min(480px,92vw)] flex-col gap-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
       >
