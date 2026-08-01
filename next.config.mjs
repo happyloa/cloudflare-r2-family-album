@@ -53,6 +53,11 @@ const contentSecurityPolicy = [
 const remotePatterns = customPattern ? [customPattern] : [];
 
 const nextConfig = {
+  experimental: {
+    // TypeScript 7 no longer exposes the legacy JavaScript compiler API.
+    // Next 16.2.12 can invoke the project's TypeScript CLI instead.
+    useTypeScriptCli: true,
+  },
   images: {
     remotePatterns,
   },

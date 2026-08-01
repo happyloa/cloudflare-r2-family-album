@@ -9,22 +9,23 @@
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
-    "fast-xml-parser": "^5.10.0",
-    "next": "^16.2.10",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "fast-xml-parser": "^5.10.1",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.2",
-    "@types/node": "^26.1.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "tailwindcss": "^4.3.2",
-    "typescript": "^6.0.3"
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
   },
   "overrides": {
+    "postcss": "8.5.25",
     "next": {
-      "postcss": "8.5.15"
+      "sharp": "0.35.3"
     }
   }
 }
