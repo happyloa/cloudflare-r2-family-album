@@ -6,7 +6,7 @@
  */
 
 // 針對圖片使用 canvas 降解析度後輸出 WebP，降低檔案大小
-export async function compressImage(
+async function compressImage(
   file: File,
 ): Promise<{ file: File; warning?: string }> {
   try {
@@ -43,7 +43,7 @@ export async function compressImage(
 }
 
 // 根據媒體型態決定處理方式：圖片壓縮，影片維持原始品質
-export async function compressMedia(
+async function compressMedia(
   file: File,
 ): Promise<{ file: File; warning?: string }> {
   if (file.type.startsWith('image/')) return compressImage(file);

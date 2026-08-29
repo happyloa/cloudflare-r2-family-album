@@ -13,6 +13,7 @@ export function Toolbar({
   usageBytes,
   usageLoading,
   usageError,
+  uploading,
   onEnableAdmin,
   onExitAdmin,
   onPickUpload,
@@ -22,6 +23,7 @@ export function Toolbar({
   usageBytes: number | null;
   usageLoading: boolean;
   usageError: string;
+  uploading: boolean;
   onEnableAdmin: () => void;
   onExitAdmin: () => void;
   onPickUpload: () => void;
@@ -85,11 +87,12 @@ export function Toolbar({
                     <button
                       type="button"
                       role="menuitem"
+                      disabled={uploading}
                       onClick={() => {
                         setNewMenuOpen(false);
                         onPickUpload();
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 cursor-pointer"
+                      className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-surface-100"
                     >
                       <span className="w-5 text-center text-base leading-none">⬆️</span>上傳檔案
                     </button>

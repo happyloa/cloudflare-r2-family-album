@@ -15,6 +15,36 @@ import {
 } from "@/lib/r2";
 
 type BatchItem = { key: string; isFolder?: boolean };
+type JsonObject = Record<string, unknown>;
+
+function invalidRequestBody() {
+  return NextResponse.json({ error: "請求內容格式錯誤" }, { status: 400 });
+}
+
+async function parseJsonObject(
+  request: NextRequest,
+): Promise<JsonObject | null> {
+  try {
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return null;
+    }
+
+    return body as JsonObject;
+  } catch {
+    return null;
+  }
+}
+
+function parseOptionalString(value: unknown): string | null {
+  if (value === undefined || value === null) return "";
+  return typeof value === "string" ? value : null;
+}
+
+function parseOptionalBoolean(value: unknown): boolean | null {
+  if (value === undefined || value === null) return false;
+  return typeof value === "boolean" ? value : null;
+}
 
 // 解析並驗證批次操作的項目陣列
 function parseBatchItems(value: unknown): BatchItem[] | null {
@@ -24,7 +54,9 @@ function parseBatchItems(value: unknown): BatchItem[] | null {
     if (!raw || typeof raw !== "object") return null;
     const key = (raw as { key?: unknown }).key;
     if (typeof key !== "string" || !key) return null;
-    items.push({ key, isFolder: Boolean((raw as { isFolder?: unknown }).isFolder) });
+    const isFolder = (raw as { isFolder?: unknown }).isFolder;
+    if (isFolder !== undefined && typeof isFolder !== "boolean") return null;
+    items.push({ key, isFolder });
   }
   return items;
 }
@@ -122,7 +154,8 @@ export async function POST(request: NextRequest) {
     const authError = await requireAdmin(request);
     if (authError) return authError;
 
-    const body = await request.json();
+    const body = await parseJsonObject(request);
+    if (!body) return invalidRequestBody();
 
     if (body?.action === "validate") {
       return NextResponse.json({ ok: true });
@@ -132,12 +165,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "未知的請求" }, { status: 400 });
     }
 
-    const validationError = validateCreateFolder(body.prefix || "", body.name);
+    const prefix = parseOptionalString(body.prefix);
+    if (prefix === null || typeof body.name !== "string") {
+      return invalidRequestBody();
+    }
+
+    const validationError = validateCreateFolder(prefix, body.name);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const folder = await createFolder(body.prefix || "", body.name);
+    const folder = await createFolder(prefix, body.name);
     return NextResponse.json({ folder });
   } catch (error) {
     console.error("Failed to create folder", error);
@@ -153,7 +191,8 @@ export async function PATCH(request: NextRequest) {
     const authError = await requireAdmin(request);
     if (authError) return authError;
 
-    const body = await request.json();
+    const body = await parseJsonObject(request);
+    if (!body) return invalidRequestBody();
 
     // 批次移動：將多個項目移動到同一個目標路徑
     if (body?.action === "batch-move") {
@@ -164,16 +203,18 @@ export async function PATCH(request: NextRequest) {
       if (!("targetPrefix" in body)) {
         return NextResponse.json({ error: "缺少目標路徑" }, { status: 400 });
       }
+      const targetPrefix = parseOptionalString(body.targetPrefix);
+      if (targetPrefix === null) return invalidRequestBody();
 
       const hasFolder = items.some((item) => item.isFolder);
-      const moveError = validateMoveTarget(body.targetPrefix || "", hasFolder);
+      const moveError = validateMoveTarget(targetPrefix, hasFolder);
       if (moveError) {
         return NextResponse.json({ error: moveError }, { status: 400 });
       }
 
       await batchMove(
         items.map((item) => ({ key: item.key, isFolder: Boolean(item.isFolder) })),
-        body.targetPrefix || "",
+        targetPrefix,
       );
       return NextResponse.json({ ok: true });
     }
@@ -185,18 +226,23 @@ export async function PATCH(request: NextRequest) {
     if (!body.key) {
       return NextResponse.json({ error: "缺少必要參數" }, { status: 400 });
     }
+    if (typeof body.key !== "string") return invalidRequestBody();
+
+    const isFolder = parseOptionalBoolean(body.isFolder);
+    if (isFolder === null) return invalidRequestBody();
 
     if (body.action === "rename") {
       if (!body.newName) {
         return NextResponse.json({ error: "缺少必要參數" }, { status: 400 });
       }
+      if (typeof body.newName !== "string") return invalidRequestBody();
 
-      const renameError = validateRenameFolder(body.isFolder, body.newName);
+      const renameError = validateRenameFolder(isFolder, body.newName);
       if (renameError) {
         return NextResponse.json({ error: renameError }, { status: 400 });
       }
 
-      if (body.isFolder) {
+      if (isFolder) {
         const folder = await renameFolder(body.key, body.newName);
         return NextResponse.json({ folder });
       }
@@ -208,21 +254,23 @@ export async function PATCH(request: NextRequest) {
     if (!("targetPrefix" in body)) {
       return NextResponse.json({ error: "缺少目標路徑" }, { status: 400 });
     }
+    const targetPrefix = parseOptionalString(body.targetPrefix);
+    if (targetPrefix === null) return invalidRequestBody();
 
     const moveError = validateMoveTarget(
-      body.targetPrefix || "",
-      body.isFolder,
+      targetPrefix,
+      isFolder,
     );
     if (moveError) {
       return NextResponse.json({ error: moveError }, { status: 400 });
     }
 
-    if (body.isFolder) {
-      const folder = await moveFolder(body.key, body.targetPrefix || "");
+    if (isFolder) {
+      const folder = await moveFolder(body.key, targetPrefix);
       return NextResponse.json({ folder });
     }
 
-    const media = await moveFile(body.key, body.targetPrefix || "");
+    const media = await moveFile(body.key, targetPrefix);
     return NextResponse.json({ media });
   } catch (error) {
     console.error("Failed to rename item", error);
@@ -238,7 +286,8 @@ export async function DELETE(request: NextRequest) {
     const authError = await requireAdmin(request);
     if (authError) return authError;
 
-    const body = await request.json();
+    const body = await parseJsonObject(request);
+    if (!body) return invalidRequestBody();
 
     // 批次刪除：一次刪除多個檔案與資料夾
     if (body?.action === "batch-delete") {

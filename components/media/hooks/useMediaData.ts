@@ -52,6 +52,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   // 都誤判「prefix 有變」而重複 push 瀏覽器歷史紀錄。
   const setCurrentPrefix = useCallback((prefix: string) => {
     if (prefix === currentPrefixRef.current) return;
+    currentPrefixRef.current = prefix;
     syncFolderInUrl(prefix);
     setCurrentPrefixState(prefix);
   }, []);
@@ -85,6 +86,10 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   // 不會把清單砍回第一頁；一般導覽（非 silent，或切換到別的資料夾）則一律從第一頁開始。
   const loadMedia = useCallback(
     async (prefix = currentPrefixRef.current, options: { silent?: boolean } = {}) => {
+      // A delayed silent reconcile for a folder that is no longer open must not
+      // abort the active request for the newly selected folder.
+      if (options.silent && prefix !== currentPrefixRef.current) return;
+
       const requestSequence = requestSequenceRef.current + 1;
       requestSequenceRef.current = requestSequence;
       requestControllerRef.current?.abort();
@@ -152,8 +157,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
         nextCursorRef.current = nextPageCursor;
         setNextCursor(nextPageCursor);
         loadedPrefixRef.current = resolvedPrefix;
-        currentPrefixRef.current = resolvedPrefix;
-        setCurrentPrefix(resolvedPrefix);
+        if (resolvedPrefix !== currentPrefixRef.current) {
+          setCurrentPrefix(resolvedPrefix);
+        }
       } catch (error) {
         if (
           requestSequence !== requestSequenceRef.current ||
@@ -171,10 +177,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
         if (timeoutId) {
           window.clearTimeout(timeoutId);
         }
-        if (
-          requestSequence !== requestSequenceRef.current ||
-          prefix !== currentPrefixRef.current
-        ) return;
+        // The prefix can change before its replacement request starts. The
+        // latest request still owns the loading flag and must release it.
+        if (requestSequence !== requestSequenceRef.current) return;
         if (requestControllerRef.current === controller) {
           requestControllerRef.current = null;
         }
@@ -188,7 +193,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   // A prefix change always restarts from the first server page.
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentPrefixState(getFolderFromUrl());
+      const prefix = getFolderFromUrl();
+      currentPrefixRef.current = prefix;
+      setCurrentPrefixState(prefix);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);

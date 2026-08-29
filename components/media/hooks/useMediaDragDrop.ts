@@ -9,7 +9,6 @@ type DragItem = { key: string; isFolder: boolean };
 
 type UseMediaDragDropProps = {
   isAdmin: boolean;
-  currentPrefix: string;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
   pushMessage: (text: string, tone: MessageTone) => void;
   handleAdminActionConfirm: (payload: {
@@ -27,7 +26,6 @@ type UseMediaDragDropProps = {
  */
 export function useMediaDragDrop({
   isAdmin,
-  currentPrefix,
   requestAdminToken,
   pushMessage,
   handleAdminActionConfirm

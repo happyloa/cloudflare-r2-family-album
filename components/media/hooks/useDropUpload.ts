@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { uploadFiles } from '@/lib/upload/client';
-import { MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
+import { MAX_FILE_COUNT, MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
 import { BUCKET_LIMIT_BYTES } from '../constants';
 import { MessageTone } from '../types';
@@ -45,9 +45,15 @@ export function useDropUpload({
   const [dropProgress, setDropProgress] = useState(0);
   const dragCounter = useRef(0);
   const internalDragRef = useRef(false);
+  const uploadInFlightRef = useRef(false);
 
   const handleDroppedFiles = useCallback(
     async (dropped: File[]) => {
+      if (uploadInFlightRef.current) {
+        pushMessage('正在處理上傳，請稍候。', 'info');
+        return;
+      }
+
       const selected = dropped.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
       if (selected.length === 0) {
         pushMessage('沒有可上傳的圖片或影片檔案。', 'error');
@@ -62,29 +68,34 @@ export function useDropUpload({
         pushMessage('檔案皆超過大小上限，請調整後再上傳。', 'error');
         return;
       }
+      if (within.length > MAX_FILE_COUNT) {
+        pushMessage(`檔案數量超過上限 ${MAX_FILE_COUNT} 個，請分批上傳。`, 'error');
+        return;
+      }
       const totalSize = within.reduce((sum, f) => sum + f.size, 0);
       if (totalSize > MAX_TOTAL_SIZE_MB * 1024 * 1024) {
         pushMessage(`總容量超過 ${MAX_TOTAL_SIZE_MB}MB，請分批上傳。`, 'error');
         return;
       }
 
-      const overLimit = usageBytes !== null && usageBytes > BUCKET_LIMIT_BYTES;
-      if (overLimit) {
-        const ok = await confirm({
-          title: '容量已超過上限',
-          message: '目前貯體容量已超過 10GB，確定仍要上傳嗎？',
-          confirmLabel: '仍要上傳',
-          danger: true
-        });
-        if (!ok) return;
-      }
-
-      const allowed = await requestAdminToken('請輸入管理密碼以上傳');
-      if (!allowed) return;
-
-      setDropUploading(true);
-      setDropProgress(0);
+      uploadInFlightRef.current = true;
       try {
+        const overLimit = usageBytes !== null && usageBytes > BUCKET_LIMIT_BYTES;
+        if (overLimit) {
+          const ok = await confirm({
+            title: '容量已超過上限',
+            message: '目前貯體容量已超過 10GB，確定仍要上傳嗎？',
+            confirmLabel: '仍要上傳',
+            danger: true
+          });
+          if (!ok) return;
+        }
+
+        const allowed = await requestAdminToken('請輸入管理密碼以上傳');
+        if (!allowed) return;
+
+        setDropUploading(true);
+        setDropProgress(0);
         const response = await uploadFiles({
           files: within,
           path: currentPrefix,
@@ -104,6 +115,7 @@ export function useDropUpload({
       } catch {
         pushMessage('上傳時發生錯誤，請稍後再試。', 'error');
       } finally {
+        uploadInFlightRef.current = false;
         setDropUploading(false);
       }
     },

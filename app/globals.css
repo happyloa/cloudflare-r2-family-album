@@ -34,32 +34,6 @@
   /* 自訂陰影 — 靛藍光暈 */
   --shadow-glow:
     0 8px 32px rgba(99, 102, 241, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  --shadow-glow-lg:
-    0 12px 48px rgba(99, 102, 241, 0.28), 0 0 0 1px rgba(99, 102, 241, 0.12);
-
-  /* 自訂動畫 */
-  --animate-fade-in: fade-in 0.3s ease-out;
-  --animate-slide-up: slide-up 0.3s ease-out;
-
-  @keyframes fade-in {
-    0% {
-      opacity: 0;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  @keyframes slide-up {
-    0% {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
   /* Modal 動畫 */
   --animate-modal-backdrop-in: modal-backdrop-in 0.2s ease-out;
   --animate-modal-content-in: modal-content-in 0.25s

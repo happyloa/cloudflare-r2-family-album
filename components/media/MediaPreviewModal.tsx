@@ -111,6 +111,15 @@ export function MediaPreviewModal({
         return;
       }
 
+      // Native video controls use the arrow keys for seeking. Events from the
+      // controls are retargeted to the video element, so leave those intact.
+      if (
+        event.target instanceof HTMLVideoElement &&
+        (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+      ) {
+        return;
+      }
+
       // Arrow key navigation
       if (event.key === 'ArrowLeft') {
         event.preventDefault();

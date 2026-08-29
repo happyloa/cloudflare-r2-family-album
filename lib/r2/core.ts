@@ -232,17 +232,40 @@ export function buildListUrl(
   return url;
 }
 
-// 根據副檔名推斷媒體類型
-export function inferType(key: string): MediaFile["type"] {
-  const lowered = key.toLowerCase();
-  if (
-    lowered.endsWith(".mp4") ||
-    lowered.endsWith(".mov") ||
-    lowered.endsWith(".webm")
-  ) {
-    return "video";
-  }
-  return "image";
+const VIDEO_FILE_EXTENSIONS = new Set([
+  "3g2",
+  "3gp",
+  "3gpp",
+  "asf",
+  "avi",
+  "f4v",
+  "flv",
+  "m2ts",
+  "m4v",
+  "mkv",
+  "mov",
+  "mp4",
+  "mpeg",
+  "mpg",
+  "mts",
+  "ogm",
+  "ogv",
+  "qt",
+  "ts",
+  "webm",
+  "wmv",
+]);
+
+// 根據已儲存的 Content-Type 或副檔名推斷媒體類型。
+// ListObjectsV2 不會回傳 Content-Type，因此列表及重新命名後以副檔名作為回退。
+export function inferType(
+  key: string,
+  contentType?: string,
+): MediaFile["type"] {
+  if (contentType?.toLowerCase().startsWith("video/")) return "video";
+
+  const extension = key.toLowerCase().split(".").pop();
+  return extension && VIDEO_FILE_EXTENSIONS.has(extension) ? "video" : "image";
 }
 
 // ── List 解析與批次操作 ──
@@ -406,7 +429,6 @@ export async function copyObjectWithinBucket(sourceKey: string, targetKey: strin
     method: "PUT",
     headers: {
       "x-amz-copy-source": encodeCopySource(getEnv().R2_BUCKET_NAME, sourceKey),
-      "x-amz-acl": "private",
     },
   });
 

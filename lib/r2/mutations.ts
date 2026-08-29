@@ -241,7 +241,6 @@ export async function uploadFilesToR2(
         headers: {
           // 儲存時帶上檔案類型，讓 R2 與 CDN 能正確推斷 Content-Type
           "Content-Type": file.type || "application/octet-stream",
-          "x-amz-acl": "private",
         },
       });
 
@@ -254,7 +253,7 @@ export async function uploadFilesToR2(
       return {
         key,
         url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
-        type: inferType(key),
+        type: inferType(key, file.type),
       } satisfies MediaFile;
     }),
   );
@@ -277,9 +276,6 @@ export async function createFolder(prefix: string, name: string) {
   const response = await signedFetch(url, {
     method: "PUT",
     body: new Uint8Array(),
-    headers: {
-      "x-amz-acl": "private",
-    },
   });
 
   if (!response.ok) {

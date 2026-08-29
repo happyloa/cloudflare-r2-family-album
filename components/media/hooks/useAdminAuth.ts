@@ -22,7 +22,6 @@ type UseAdminAuthProps = {
  */
 export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   const [adminToken, setAdminToken] = useState("");
-  const [adminInput, setAdminInput] = useState("");
   const isAdmin = Boolean(adminToken);
   const adminTimeoutRef = useRef<number | null>(null);
   // 同步保存最新 token，供非同步流程（如拖曳上傳）在 setState 尚未 flush 時讀取
@@ -31,7 +30,6 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   // 清除管理員 Session (登出)
   const clearAdminSession = useCallback(
     (notice?: string) => {
-      setAdminInput("");
       setAdminToken("");
       adminTokenRef.current = "";
       if (typeof window !== "undefined") {
@@ -131,7 +129,6 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
         }
 
         setAdminToken(trimmed);
-        setAdminInput(trimmed);
         adminTokenRef.current = trimmed;
         sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed);
         resetAdminTimeout();
@@ -154,10 +151,7 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
       if (!adminToken) {
         const ok = await openPassword({
           message: promptMessage,
-          onSubmit: async (value) => {
-            setAdminInput(value);
-            return validateAndApplyToken(value);
-          },
+          onSubmit: async (value) => validateAndApplyToken(value),
         });
         if (!ok) return false;
       }
@@ -209,9 +203,7 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   return {
     adminToken,
     adminTokenRef,
-    adminInput,
     isAdmin,
-    setAdminInput,
     validateAndApplyToken,
     clearAdminSession,
     requestAdminToken,

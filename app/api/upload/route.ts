@@ -21,7 +21,13 @@ export async function POST(request: Request) {
     const authError = await requireAdmin(request);
     if (authError) return authError;
 
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json({ error: "表單資料格式錯誤" }, { status: 400 });
+    }
+
     // 支援多檔案上傳，並在此集中取出所有 File 物件
     const files = formData
       .getAll("files")

@@ -102,7 +102,6 @@ export function MediaGrid() {
 
   const { isDragging, handleItemDragStart, handleItemDragEnd, moveDraggedItemTo } = useMediaDragDrop({
     isAdmin,
-    currentPrefix,
     requestAdminToken,
     pushMessage,
     handleAdminActionConfirm
@@ -305,6 +304,7 @@ export function MediaGrid() {
         usageBytes={usage.usageBytes}
         usageLoading={usage.loading}
         usageError={usage.error}
+        uploading={dropUploading}
         onEnableAdmin={() => void requestAdminToken('請輸入管理密碼以啟用管理模式')}
         onExitAdmin={handleClearAdminToken}
         onPickUpload={() => uploadInputRef.current?.click()}
