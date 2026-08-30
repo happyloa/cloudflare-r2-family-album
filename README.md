@@ -1,95 +1,100 @@
 # Family Album
 
-一個以 Next.js App Router 打造的家庭相簿，專注於直接管理 Cloudflare R2 的媒體。介面採 Google Drive 風的操作體驗：路徑導覽、多選與批次操作、右鍵選單、拖曳上傳與移動、圖片與影片預覽，並以管理密碼保護寫入操作。
+部署在 Cloudflare Workers 的私密家庭相簿。Next.js App Router 負責網頁與 API，媒體檔保留在既有的 Cloudflare R2 bucket。
 
-## 特色
+## 功能
 
-- **雙層目錄與年份分組**：資料夾深度上限 2 層、名稱最長 30 字；根目錄依名稱開頭年份自動分組成可收合的手風琴（收合狀態會記住）。
-- **管理密碼與節流**：寫入 API 需帶入 `ADMIN_ACCESS_TOKEN`，密碼錯誤會依 IP 進行速率限制（預設 5 次 / 5 分鐘）；密碼輸入採 App 內對話框，錯誤可原地重試。
-- **Google Drive 風操作**：多選（hover 核取方塊、Ctrl/Cmd 點選、Shift 範圍選取、手機長按）、右鍵 / ⋮ 溢位選單、批次移動與批次刪除、刪除可在數秒內復原（Undo）。
-- **媒體瀏覽體驗**：麵包屑導覽、無限捲動、依名稱 / 日期 / 大小排序、快速搜尋與圖片 / 影片篩選、燈箱預覽含鍵盤左右切換。
-- **上傳體驗**：透過「＋ 新增」選單，或把檔案直接拖到頁面任意處即上傳到目前資料夾；前端自動將圖片壓縮為 WebP 並套用時間戳記檔名；工具列即時顯示貯體用量。
-- **移動方式**：拖曳到資料夾或「上一層」，或用資料夾選擇器（瀏覽式）挑選目的地。
-- **樂觀更新**：移動 / 刪除 / 重新命名會即時反映於畫面，再於背景與 R2 對帳，避免等待感。
-- **Session 安全性**：管理模式僅存於 sessionStorage，15 分鐘未操作會自動失效。
-- **Cloudflare Pages 友善**：所有 API 以 Edge Runtime 實作，可直接部署到 Pages。
+- 資料夾與年份分組、多選、拖曳上傳／移動、搜尋、排序與媒體預覽。
+- 寫入操作以 `ADMIN_ACCESS_TOKEN` 保護，並對失敗嘗試節流。
+- 圖片與影片直接從 R2 公開網域讀取；Noto Sans TC 由 Workers Static Assets 自託管。
 
-## 專案結構
+## 需求
 
-```
-app/                   # Next.js App Router 頁面與 API Routes（Edge Runtime）
-  api/media/           # 列表 / 建立 / 重新命名 / 移動 / 刪除（含批次）
-  api/media/usage/     # 貯體已使用容量
-  api/upload/          # 圖片 / 影片上傳
-components/
-  MediaGrid.tsx        # 整合各功能的核心元件
-  media/               # 媒體 UI：FolderGrid、MediaSection、Toolbar、各 Modal、ContextMenu…
-    hooks/             # useMediaData / useAdminAuth / useMediaActions / useMediaDragDrop /
-                       # useSelection / useContextMenu / useDialogs / useDropUpload /
-                       # useUndoableDelete / useBucketUsage / useFocusTrap / useLongPress / useMessage
-lib/
-  r2/                  # Cloudflare R2 操作（core / queries / mutations，使用 aws4fetch）
-  constants.ts         # 跨前後端共用的資料夾規則常數（深度 / 名稱長度上限）
-  path.ts              # 共用路徑處理（client 與 server 共用）
-  ensure-admin.ts      # 管理員身分驗證與 IP 速率限制
-  upload/              # 上傳常數與前端壓縮 / 上傳邏輯
+- Node.js 22 以上與 npm
+- Cloudflare 帳戶、既有 R2 bucket 與 S3 相容 API Access Key
+
+## 本機開發
+
+```powershell
+npm install
+Copy-Item .env.example .env.local
+npm run dev
 ```
 
-## 需求與相依
+若要以 Workers runtime 開發：
 
-- Node.js 20+ 與 npm
-- Next.js 16、React 19、TypeScript、Tailwind CSS 4
-- Cloudflare R2（含 Access Key / Secret Key）
+```powershell
+Copy-Item .dev.vars.example .dev.vars
+npm run dev:worker
+```
 
-## 開發環境設定
-
-1. 安裝套件：
-   ```bash
-   npm install
-   ```
-2. 複製並填寫環境變數：
-   ```bash
-   cp .env.example .env.local
-   ```
-3. 本機啟動：
-   ```bash
-   npm run dev
-   ```
-4. 其他腳本：
-   - `npm run build`：產生生產環境建置成果
+`dev:worker` 預設使用 <http://localhost:3001>。
 
 ## 環境變數
 
-| 變數                                                  | 必填 | 說明                                   |
-| ----------------------------------------------------- | ---- | -------------------------------------- |
-| `R2_ACCOUNT_ID`                                       | ✅   | Cloudflare 帳戶 ID                     |
-| `R2_ACCESS_KEY_ID`                                    | ✅   | R2 Access Key                          |
-| `R2_SECRET_ACCESS_KEY`                                | ✅   | R2 Secret Key                          |
-| `R2_BUCKET_NAME`                                      | ✅   | 儲存媒體的 bucket 名稱                 |
-| `R2_PUBLIC_BASE`                                      | ✅   | 公開讀取的基底 URL                     |
-| `ADMIN_ACCESS_TOKEN`                                  | ✅   | 管理密碼（最長 15 字）                 |
-| `ADMIN_RATE_LIMIT_MAX_FAILURES`                       | ⬜️   | 密碼錯誤嘗試次數（預設 5 次 / 5 分鐘） |
-| `MAX_IMAGE_SIZE_MB` / `NEXT_PUBLIC_MAX_IMAGE_SIZE_MB` | ⬜️   | 圖片單檔上限（預設 10MB）              |
-| `MAX_VIDEO_SIZE_MB` / `NEXT_PUBLIC_MAX_VIDEO_SIZE_MB` | ⬜️   | 影片單檔上限（預設 150MB）             |
+| 變數 | 必填 | 用途 |
+| --- | --- | --- |
+| `R2_ACCOUNT_ID` | 是 | Cloudflare 帳戶 ID |
+| `R2_ACCESS_KEY_ID` | 是 | R2 S3 相容 API Access Key |
+| `R2_SECRET_ACCESS_KEY` | 是 | R2 S3 相容 API Secret Key |
+| `R2_BUCKET_NAME` | 是 | 既有媒體 bucket 名稱 |
+| `R2_PUBLIC_BASE` | 是 | R2 公開讀取 URL |
+| `ADMIN_ACCESS_TOKEN` | 是 | 管理密碼 |
+| `ADMIN_RATE_LIMIT_MAX_FAILURES` | 否 | 密碼錯誤上限（預設 5 次／5 分鐘） |
+| `MAX_IMAGE_SIZE_MB` | 否 | 圖片單檔上限（預設 10 MB，最高 80 MB） |
+| `MAX_VIDEO_SIZE_MB` | 否 | 影片單檔上限（預設／最高 80 MB） |
 
-## API 速查
+需要調低前端上傳預檢時，同步設定 `NEXT_PUBLIC_MAX_IMAGE_SIZE_MB` 或 `NEXT_PUBLIC_MAX_VIDEO_SIZE_MB`。Worker 端單檔與整批上傳最多 80 MB。
 
-| 方法   | 路徑                 | 用途                                       | 認證            |
-| ------ | -------------------- | ------------------------------------------ | --------------- |
-| GET    | `/api/media?prefix=` | 取得指定 prefix 的資料夾與媒體清單         | 不需            |
-| POST   | `/api/media`         | 建立資料夾 / 驗證管理密碼                   | `x-admin-token` |
-| PATCH  | `/api/media`         | 重新命名 / 移動 / 批次移動                 | `x-admin-token` |
-| DELETE | `/api/media`         | 刪除 / 批次刪除（檔案或資料夾）            | `x-admin-token` |
-| GET    | `/api/media/usage`   | 取得儲存貯體 (Bucket) 已使用容量           | `x-admin-token` |
-| POST   | `/api/upload`        | 上傳圖片 / 影片                            | `x-admin-token` |
+## 指令
 
-## 部署建議（Cloudflare Pages）
+| 指令 | 用途 |
+| --- | --- |
+| `npm run dev` | Next.js 本機開發 |
+| `npm run dev:worker` | Workers runtime 本機開發 |
+| `npm run typecheck` | TypeScript 檢查 |
+| `npm run check:vinext` | Vinext 相容性檢查 |
+| `npm run build` | Next.js 生產建置 |
+| `npm run build:worker` | Workers 生產建置 |
+| `npm run cf-typegen` | 產生 Worker 型別 |
+| `npm run deploy:dry-run` | 驗證 Workers 部署設定 |
+| `npm run deploy` | 發佈 Cloudflare Worker |
 
-1. 在 Pages 專案設定中新增上述環境變數
-2. `next.config.mjs` 已配置 Edge Runtime，無需額外調整
-3. 若使用自訂網域，確認 `R2_PUBLIC_BASE` 與實際公開位址一致
-4. Build command 固定用 `npx @cloudflare/next-on-pages@1`；已停止維護（deprecated），但因專案用的是
-   Cloudflare Pages 而非 Workers Builds，這仍是目前正確的部署方式，**不要**改成 OpenNext / Workers 相關設定
-5. 根目錄的 `.npmrc`（`legacy-peer-deps=true`）是刻意保留的設定，用來化解 next-on-pages 與
-   wrangler 之間的 `@cloudflare/workers-types` 版本衝突（4.x vs 5.x）。這個檔案曾在一次例行的
-   「更新套件」中被誤刪並直接導致部署失敗，**請勿**在整理依賴時順手移除
+## 部署
+
+1. 使用 `npx wrangler login` 登入，再以 `npx wrangler whoami` 確認帳戶。
+2. 在 Worker Dashboard 設定上述 R2 與管理員 runtime variables／secrets。
+3. 執行：
+
+   ```powershell
+   npm run deploy
+   ```
+
+`wrangler.jsonc` 是 Worker 部署設定來源，並啟用 `keep_vars: true` 以保留 Dashboard 中的 runtime variables。
+
+## GitHub Actions
+
+Workflow 位於 `.github/workflows/worker.yml`：
+
+- Pull request 到 `main`：執行 Vinext 相容性、型別與 Workers build 檢查。
+- Push 到 `main`：當 `CLOUDFLARE_WORKERS_DEPLOY=true` 時部署正式 Worker。
+- GitHub Actions 的 **Run workflow**：可在 `main` 手動重新部署，不需新 commit。
+
+首次啟用自動部署：
+
+1. 在 GitHub repository 建立 `production` Environment。
+2. 在該 Environment 新增 `CLOUDFLARE_API_TOKEN` secret，使用僅限此帳戶、具 Workers 編輯權限的 Cloudflare API Token。
+3. 在 repository 的 Actions Variables 新增 `CLOUDFLARE_WORKERS_DEPLOY=true`。
+
+`R2_*` 與 `ADMIN_ACCESS_TOKEN` 只保存在 Worker Dashboard。`CLOUDFLARE_API_TOKEN` 只保存在 GitHub Environment secret，絕不可設定成 Worker runtime variable。
+
+## API
+
+| 方法 | 路徑 | 用途 | 認證 |
+| --- | --- | --- | --- |
+| GET | `/api/media?prefix=` | 取得資料夾與媒體清單 | 不需 |
+| POST | `/api/media` | 建立資料夾／驗證管理密碼 | `x-admin-token` |
+| PATCH | `/api/media` | 重新命名、移動、批次移動 | `x-admin-token` |
+| DELETE | `/api/media` | 刪除與批次刪除 | `x-admin-token` |
+| GET | `/api/media/usage` | 取得 bucket 已使用容量 | `x-admin-token` |
+| POST | `/api/upload` | 上傳圖片／影片 | `x-admin-token` |
