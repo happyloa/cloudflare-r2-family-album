@@ -1,8 +1,14 @@
 node_modules
 .next
 .vercel
+.vinext
+.wrangler
+dist
+worker-configuration.d.ts
 .env*
 !.env.example
+.dev.vars*
+!.dev.vars.example
 *.log
 .cache
 out

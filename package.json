@@ -2,30 +2,46 @@
   "name": "family-album",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "next dev",
+    "dev:worker": "vinext dev --port 3001",
     "build": "next build",
+    "build:worker": "vinext build",
     "start": "next start",
+    "deploy": "vinext-cloudflare deploy",
+    "deploy:dry-run": "vinext build && vinext-cloudflare deploy --dry-run",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv",
+    "check:vinext": "vinext check",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/noto-sans-tc": "^5.3.0",
+    "@vinext/cloudflare": "^1.0.0-beta.6",
     "aws4fetch": "^1.0.20",
     "fast-xml-parser": "^5.11.1",
     "next": "^16.3.3",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-server-dom-webpack": "^19.2.8",
+    "vinext": "^1.0.0-beta.8"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.2",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.34",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "wrangler": "^4.127.1"
   },
   "overrides": {
     "postcss": "$postcss",

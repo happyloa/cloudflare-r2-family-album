@@ -1,0 +1,7 @@
+# Local Workers development only. Copy to .dev.vars and replace every value.
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key
+R2_SECRET_ACCESS_KEY=your_secret_key
+R2_BUCKET_NAME=family-album
+R2_PUBLIC_BASE=https://pub-xxxxxxxxxxxxxxxx.r2.dev
+ADMIN_ACCESS_TOKEN=your_admin_password

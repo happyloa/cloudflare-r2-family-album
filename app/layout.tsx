@@ -1,14 +1,12 @@
 import type { Metadata } from 'next';
-import { Noto_Sans_TC } from 'next/font/google';
+// 將繁中字型隨靜態資產部署，避免 Vinext/Workers 建置時依賴 Google Fonts 網路請求。
+import '@fontsource/noto-sans-tc/chinese-traditional-400.css';
+import '@fontsource/noto-sans-tc/chinese-traditional-500.css';
+import '@fontsource/noto-sans-tc/chinese-traditional-600.css';
+import '@fontsource/noto-sans-tc/chinese-traditional-700.css';
 import './globals.css';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-
-// 設定字型：使用 Noto Sans TC (繁體中文)
-const notoSans = Noto_Sans_TC({
-  subsets: ['latin'],
-  display: 'swap'
-});
 
 // 設定 Metadata，包含 SEO 與爬蟲設定
 export const metadata: Metadata = {
@@ -31,11 +29,11 @@ export const metadata: Metadata = {
 
 /**
  * RootLayout: 應用程式的根佈局
- * 包含全域樣式、字型設定以及背景效果
+ * 包含全域樣式與背景效果
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-Hant" className={`bg-surface-950 ${notoSans.className}`}>
+    <html lang="zh-Hant" className="bg-surface-950">
       <body className="min-h-screen bg-gradient-to-b from-surface-950 via-surface-950/95 to-surface-900 text-surface-100 antialiased">
         {/* 背景裝飾效果 */}
         <div className="pointer-events-none fixed inset-0 -z-10 select-none overflow-hidden" aria-hidden>

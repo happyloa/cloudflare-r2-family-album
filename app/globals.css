@@ -83,6 +83,9 @@ body.modal-open {
 
 body {
   margin: 0;
+  font-family:
+    "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
   background-color: #0a0e17;
   background-image:
     radial-gradient(

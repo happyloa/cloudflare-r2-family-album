@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type BucketUsageResponse = { totalBytes?: number };
 
 /**
  * useBucketUsage Hook: 取得並快取 R2 貯體已使用容量
@@ -19,7 +20,7 @@ export function useBucketUsage(enabled: boolean, authorizedFetch: AuthorizedFetc
       setError('');
       const response = await authorizedFetch(`/api/media/usage${force ? '?force=true' : ''}`);
       if (!response.ok) throw new Error('Failed to fetch usage');
-      const data = await response.json();
+      const data = (await response.json()) as BucketUsageResponse;
       const parsed = Number(data?.totalBytes);
       setUsageBytes(Number.isFinite(parsed) ? parsed : 0);
     } catch (err) {

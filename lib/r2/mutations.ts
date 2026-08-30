@@ -233,11 +233,11 @@ export async function uploadFilesToR2(
 
   const uploads = await Promise.all(
     prepared.map(async ({ file, key }) => {
-      const body = new Uint8Array(await file.arrayBuffer());
       const url = buildObjectUrl(key);
       const response = await signedFetch(url, {
         method: "PUT",
-        body,
+        // File 是 Blob，可直接交給 fetch 串流處理，避免再複製整個檔案到 Worker 記憶體。
+        body: file,
         headers: {
           // 儲存時帶上檔案類型，讓 R2 與 CDN 能正確推斷 Content-Type
           "Content-Type": file.type || "application/octet-stream",

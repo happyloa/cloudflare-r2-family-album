@@ -9,9 +9,6 @@ import {
   getSizeLimitByMime,
 } from "@/lib/upload/constants";
 
-// 使用 Edge Runtime 以符合 Cloudflare Pages 的執行環境。
-export const runtime = "edge";
-
 /**
  * POST: 處理檔案上傳
  * 支援多檔案上傳，會先驗證大小與格式，再寫入 R2
@@ -20,6 +17,19 @@ export async function POST(request: Request) {
   try {
     const authError = await requireAdmin(request);
     if (authError) return authError;
+
+    // Workers 在 Free/Pro 方案的請求本文上限為 100 MB；保留一段空間給 multipart 邊界與表單欄位。
+    const contentLength = Number(request.headers.get("content-length"));
+    const maxRequestBytes = (MAX_TOTAL_SIZE_MB + 1) * 1024 * 1024;
+    if (Number.isFinite(contentLength) && contentLength > maxRequestBytes) {
+      return NextResponse.json(
+        {
+          error: `總容量超過 ${MAX_TOTAL_SIZE_MB}MB，請分批上傳。`,
+          limits: { maxFileCount: MAX_FILE_COUNT, maxTotalSizeMB: MAX_TOTAL_SIZE_MB },
+        },
+        { status: 413 },
+      );
+    }
 
     let formData: FormData;
     try {

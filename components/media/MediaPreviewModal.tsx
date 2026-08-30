@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { MediaFile } from './types';
@@ -249,16 +248,14 @@ export function MediaPreviewModal({
               </div>
             )}
             {media.type === 'image' ? (
-              <Image
+              <img
                 src={media.url}
                 alt={media.key}
-                fill
                 draggable={false}
                 loading="lazy"
                 decoding="async"
-                className={`object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-                sizes="100vw"
-                onLoadingComplete={markLoaded}
+                className={`h-full w-full object-contain transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={markLoaded}
                 onError={markLoaded}
               />
             ) : (

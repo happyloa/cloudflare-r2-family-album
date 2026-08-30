@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { MediaFile } from './types';
@@ -101,9 +100,6 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
   );
 }
 
-const BLUR_PLACEHOLDER =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImEiIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMyODI1MjMiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM0NDQwM2MiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cmVjdCB3aWR0aD0iMTIiIGhlaWdodD0iOCIgcng9IjIiIGZpbGw9InVybCgjYSkiLz48L3N2Zz4=';
-
 export function MediaThumbnail({ media }: { media: MediaFile }) {
   const [loadedUrl, setLoadedUrl] = useState('');
   const isLoaded = loadedUrl === media.url;
@@ -116,17 +112,13 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
           }`}
       />
       {media.type === 'image' ? (
-        <Image
+        <img
           src={media.url}
           alt={media.key}
-          fill
           draggable={false}
-          sizes="(min-width: 1024px) 25vw, 50vw"
-          className={`object-cover transition-[opacity,filter,transform] duration-500 ${isLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-80 blur-xl scale-105'
+          className={`h-full w-full object-cover transition-[opacity,filter,transform] duration-500 ${isLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-80 blur-xl scale-105'
             }`}
-          placeholder="blur"
-          blurDataURL={BLUR_PLACEHOLDER}
-          onLoadingComplete={handleReady}
+          onLoad={handleReady}
           onError={handleReady}
         />
       ) : (

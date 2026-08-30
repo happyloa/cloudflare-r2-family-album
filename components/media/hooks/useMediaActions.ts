@@ -154,7 +154,10 @@ export function useMediaActions({
         // 若同資料夾已有同名項目，伺服器會自動加上編號（例如「B (2).jpg」）；
         // 本地樂觀更新套用的是使用者輸入的原始名稱，這裡用伺服器實際採用的名稱校正，
         // 避免跟既有項目的 key 撞在一起而讓 React 清單短暫顯示錯亂。
-        const data = await response.json().catch(() => null);
+        const data = (await response.json().catch(() => null)) as {
+          folder?: { key?: string };
+          media?: { key?: string };
+        } | null;
         if (payload.isFolder) {
           const actualName = (data?.folder?.key ?? "").split("/").pop();
           if (actualName && actualName !== payload.newName) {
