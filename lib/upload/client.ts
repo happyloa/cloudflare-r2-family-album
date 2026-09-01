@@ -1,5 +1,7 @@
 'use client';
 
+import type { MediaFile } from '@/lib/r2';
+
 /**
  * 上傳相關的前端共用邏輯
  * 同時供「上傳表單」與「拖曳到頁面上傳」使用，避免重複實作壓縮與 XHR 流程。
@@ -57,6 +59,54 @@ type UploadOptions = {
   onProgress?: (percent: number | null) => void;
 };
 
+/** The subset that the upload endpoint has explicitly confirmed. */
+export type UploadResult = {
+  ok: boolean;
+  status: number;
+  media: MediaFile[];
+  hasMediaResult: boolean;
+  error?: string;
+};
+
+function isMediaFile(value: unknown): value is MediaFile {
+  if (!value || typeof value !== 'object') return false;
+  const media = value as Record<string, unknown>;
+  return (
+    typeof media.key === 'string' &&
+    typeof media.url === 'string' &&
+    (media.type === 'image' || media.type === 'video')
+  );
+}
+
+function parseUploadResult(request: XMLHttpRequest): UploadResult {
+  const ok = request.status >= 200 && request.status < 300;
+  const fallback: UploadResult = {
+    ok,
+    status: request.status,
+    media: [],
+    hasMediaResult: false
+  };
+
+  if (!request.responseText) return fallback;
+
+  try {
+    const payload: unknown = JSON.parse(request.responseText);
+    if (!payload || typeof payload !== 'object') return fallback;
+
+    const body = payload as Record<string, unknown>;
+    const media = body.media;
+    const hasMediaResult = Array.isArray(media) && media.every(isMediaFile);
+    return {
+      ...fallback,
+      media: hasMediaResult ? media : [],
+      hasMediaResult,
+      error: typeof body.error === 'string' ? body.error : undefined
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * 壓縮並上傳一批檔案到 /api/upload
  * onProgress 會回報 0~100；無法計算進度時回報 null。
@@ -66,7 +116,7 @@ export async function uploadFiles({
   path,
   adminToken,
   onProgress,
-}: UploadOptions): Promise<Response> {
+}: UploadOptions): Promise<UploadResult> {
   const safePath = path.trim().replace(/^\/+|\/+$/g, '');
 
   const compressed: File[] = [];
@@ -79,7 +129,7 @@ export async function uploadFiles({
   compressed.forEach((mediaFile) => formData.append('files', mediaFile));
   formData.append('path', safePath);
 
-  return new Promise<Response>((resolve, reject) => {
+  return new Promise<UploadResult>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', '/api/upload');
 
@@ -95,14 +145,7 @@ export async function uploadFiles({
       onProgress?.(Math.round((event.loaded / event.total) * 100));
     };
 
-    request.onload = () => {
-      resolve(
-        new Response(request.response, {
-          status: request.status,
-          statusText: request.statusText,
-        }),
-      );
-    };
+    request.onload = () => resolve(parseUploadResult(request));
 
     request.onerror = () => reject(new Error('上傳時發生錯誤'));
     request.onabort = () => reject(new Error('上傳已被中止'));

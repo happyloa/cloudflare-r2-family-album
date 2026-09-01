@@ -1,6 +1,6 @@
 'use client';
 
-import { type DragEvent, type MouseEvent, useEffect, useRef } from 'react';
+import { type DragEvent, type KeyboardEvent, type MouseEvent, useEffect, useRef } from 'react';
 
 import { ContextTarget } from './hooks/useContextMenu';
 import { useLongPress } from './hooks/useLongPress';
@@ -72,10 +72,11 @@ export function MediaSection({
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const longPress = useLongPress((id) => onToggleSelect(id));
+  const autoLoadEnabled = !searchQuery.trim() && filter === 'all';
 
   // 無限捲動：sentinel 進入視窗時載入下一批
   useEffect(() => {
-    if (!hasMore) return;
+    if (!hasMore || !autoLoadEnabled) return;
     const node = sentinelRef.current;
     if (!node) return;
     const observer = new IntersectionObserver(
@@ -86,9 +87,9 @@ export function MediaSection({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, onLoadMore, files.length]);
+  }, [hasMore, onLoadMore, files.length, autoLoadEnabled]);
 
-  if (!allFilesCount) return null;
+  if (!allFilesCount && !searchEnabled) return null;
 
   const filters: { key: 'all' | 'image' | 'video'; label: string }[] = [
     { key: 'all', label: '全部' },
@@ -123,6 +124,15 @@ export function MediaSection({
     onSelect(item, event.currentTarget);
   };
 
+  const handleCardKeyDown = (item: MediaFile, event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!isAdmin || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return;
+
+    event.preventDefault();
+    const id = makeSelectionId(item.key, false);
+    onItemClick(id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -141,8 +151,8 @@ export function MediaSection({
                 type="search"
                 value={searchQuery}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="輸入標題關鍵字"
-                aria-label="搜尋媒體標題"
+                placeholder="搜尋資料夾或媒體"
+                aria-label="搜尋資料夾與媒體"
               />
             </label>
           ) : null}
@@ -198,7 +208,7 @@ export function MediaSection({
         </div>
       </div>
 
-      {files.length === 0 && (
+      {files.length === 0 && allFilesCount > 0 && (
         <div className="rounded-2xl border border-surface-700/50 bg-surface-800/50 px-4 py-3 text-sm text-surface-100">
           {searchQuery.trim()
             ? `沒有找到包含「${searchQuery.trim()}」的媒體，請換個關鍵字或清除搜尋。`
@@ -215,12 +225,11 @@ export function MediaSection({
           return (
             <article
               key={item.key}
-              className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-surface-800/50 shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-xl active:scale-[0.98] ${
+              className={`group relative overflow-hidden rounded-2xl border bg-surface-800/50 shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${
                 selected
                   ? 'border-primary-500 ring-2 ring-primary-500/60'
                   : 'border-surface-700/50 hover:border-primary-500/40'
               }`}
-              onClick={(event) => handleCardClick(item, event)}
               onContextMenu={(event) => {
                 if (!isAdmin) return;
                 onContextMenu(event, { key: item.key, isFolder: false });
@@ -229,13 +238,6 @@ export function MediaSection({
               onTouchMove={longPress.cancel}
               onTouchEnd={longPress.cancel}
               onTouchCancel={longPress.cancel}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  if (isAdmin && selectionMode) onToggleSelect(id);
-                  else onSelect(item, event.currentTarget);
-                }
-              }}
               draggable={isAdmin}
               onDragStart={(event) => {
                 if (!isAdmin) return;
@@ -245,10 +247,29 @@ export function MediaSection({
                 onDragStart?.(item, event);
               }}
               onDragEnd={() => onDragEnd?.()}
-              role="button"
-              tabIndex={0}
-              aria-label={`${item.key.split('/').pop()} 預覽`}
             >
+              <button
+                type="button"
+                onClick={(event) => handleCardClick(item, event)}
+                onKeyDown={(event) => handleCardKeyDown(item, event)}
+                className="flex w-full cursor-pointer flex-col text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300"
+                aria-label={
+                  isAdmin && selectionMode
+                    ? `${selected ? '取消選取' : '選取'}媒體 ${item.key.split('/').pop() || item.key}`
+                    : `預覽媒體 ${item.key.split('/').pop() || item.key}`
+                }
+              >
+                <MediaThumbnail media={item} />
+                <div className="flex flex-col gap-1 p-4 text-sm text-surface-100">
+                  <p className="truncate text-sm font-semibold text-white" title={item.key}>
+                    {item.key.split('/').pop()}
+                  </p>
+                  {item.lastModified ? (
+                    <p className="text-xs text-surface-500">更新：{formatTimestamp(item.lastModified)}</p>
+                  ) : null}
+                </div>
+              </button>
+
               {/* 選取核取方塊（管理模式，hover 或已選取時顯示） */}
               {isAdmin ? (
                 <button
@@ -257,7 +278,8 @@ export function MediaSection({
                     event.stopPropagation();
                     onToggleSelect(id);
                   }}
-                  className={`absolute left-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer ${
+                  onTouchStart={(event) => event.stopPropagation()}
+                  className={`absolute left-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 ${
                     selected
                       ? 'border-primary-400 bg-primary-500 text-surface-950'
                       : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
@@ -279,7 +301,8 @@ export function MediaSection({
                     event.stopPropagation();
                     onContextMenu(event, { key: item.key, isFolder: false });
                   }}
-                  className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-900/70 text-surface-200 opacity-0 ring-1 ring-white/10 backdrop-blur-sm transition-all duration-150 hover:bg-surface-900 hover:text-white group-hover:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
+                  onTouchStart={(event) => event.stopPropagation()}
+                  className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-900/70 text-surface-200 opacity-0 ring-1 ring-white/10 backdrop-blur-sm transition-all duration-150 hover:bg-surface-900 hover:text-white group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 [@media(hover:none)]:opacity-100 cursor-pointer"
                   aria-label="更多操作"
                 >
                   <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
@@ -290,15 +313,6 @@ export function MediaSection({
                 </button>
               ) : null}
 
-              <MediaThumbnail media={item} />
-              <div className="flex flex-col gap-1 p-4 text-sm text-surface-100">
-                <p className="truncate text-sm font-semibold text-white" title={item.key}>
-                  {item.key.split('/').pop()}
-                </p>
-                {item.lastModified ? (
-                  <p className="text-xs text-surface-500">更新：{formatTimestamp(item.lastModified)}</p>
-                ) : null}
-              </div>
             </article>
           );
         })}

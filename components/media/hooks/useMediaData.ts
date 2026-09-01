@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { sanitizePath } from '../sanitize';
 import { FolderItem, MediaFile, MediaResponse, MessageTone } from '../types';
 
 type FilterOption = 'all' | 'image' | 'video';
@@ -21,6 +22,12 @@ function mergeItemsByKey<T extends { key: string }>(current: T[], incoming: T[])
 
   return merged;
 }
+
+function prependOrReplaceItems<T extends { key: string }>(current: T[], incoming: T[]) {
+  if (incoming.length === 0) return current;
+  const incomingKeys = new Set(incoming.map((item) => item.key));
+  return [...incoming, ...current.filter((item) => !incomingKeys.has(item.key))];
+}
 function getFolderFromUrl() {
   if (typeof window === 'undefined') return '';
   return new URL(window.location.href).searchParams.get('folder') ?? '';
@@ -35,26 +42,29 @@ function syncFolderInUrl(prefix: string) {
 
 type UseMediaDataProps = {
   pushMessage: (text: string, tone: MessageTone) => void;
+  initialPrefix?: string;
 };
 
 /**
  * useMediaData Hook: 媒體資料管理
  * 包含：API 資料載入、過濾、搜尋、排序、無限捲動分批渲染，以及樂觀更新用的本地 mutators。
  */
-export function useMediaData({ pushMessage }: UseMediaDataProps) {
+export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataProps) {
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentPrefix, setCurrentPrefixState] = useState(getFolderFromUrl);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [currentPrefix, setCurrentPrefixState] = useState(() => sanitizePath(initialPrefix));
   // 讀 ref 而非閉包裡的 currentPrefix，讓這個函式維持穩定的參照（不需要隨 currentPrefix
   // 變動而重建）。loadMedia 內部呼叫的正是這個穩定版本，才不會因為自己的 useCallback
   // 依賴只有 [pushMessage] 而永遠鎖死在掛載當下的舊 currentPrefix，導致每次背景對帳
   // 都誤判「prefix 有變」而重複 push 瀏覽器歷史紀錄。
   const setCurrentPrefix = useCallback((prefix: string) => {
-    if (prefix === currentPrefixRef.current) return;
-    currentPrefixRef.current = prefix;
-    syncFolderInUrl(prefix);
-    setCurrentPrefixState(prefix);
+    const safePrefix = sanitizePath(prefix);
+    if (safePrefix === currentPrefixRef.current) return;
+    currentPrefixRef.current = safePrefix;
+    syncFolderInUrl(safePrefix);
+    setCurrentPrefixState(safePrefix);
   }, []);
   const [filter, setFilter] = useState<FilterOption>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +100,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
       // abort the active request for the newly selected folder.
       if (options.silent && prefix !== currentPrefixRef.current) return;
 
+      const isNavigation = !options.silent && prefix !== loadedPrefixRef.current;
       const requestSequence = requestSequenceRef.current + 1;
       requestSequenceRef.current = requestSequence;
       requestControllerRef.current?.abort();
@@ -99,7 +110,15 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
       setLoadingMore(false);
       setNextCursor(null);
       loadingRef.current = true;
-      if (!options.silent) setLoading(true);
+      if (!options.silent) {
+        setLoadError(null);
+        if (isNavigation) {
+          // Do not show a previous folder's items under a new breadcrumb.
+          setFiles([]);
+          setFolders([]);
+        }
+        setLoading(true);
+      }
 
       const isReconcile = Boolean(options.silent) && prefix === currentPrefixRef.current;
       const targetCount = isReconcile
@@ -137,6 +156,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
           if (!response.ok) {
             const content = response.status === 429 ? '請稍後再試，系統暫時忙碌。' : '無法載入媒體，請稍後再試。';
             pushMessage(content, 'error');
+            if (!options.silent) setLoadError(content);
             return;
           }
 
@@ -154,6 +174,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
 
         setFiles(mergedFiles);
         setFolders(mergedFolders);
+        setLoadError(null);
         nextCursorRef.current = nextPageCursor;
         setNextCursor(nextPageCursor);
         loadedPrefixRef.current = resolvedPrefix;
@@ -172,6 +193,9 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
         } else {
           // 背景對帳失敗不打擾使用者，但至少留下紀錄方便日後排查「畫面跟 R2 對不上」的回報。
           console.warn(`[useMediaData] silent reconcile failed for prefix "${prefix}"`, error);
+        }
+        if (!options.silent) {
+          setLoadError('無法載入這個資料夾，請檢查連線後再試一次。');
         }
       } finally {
         if (timeoutId) {
@@ -193,7 +217,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   // A prefix change always restarts from the first server page.
   useEffect(() => {
     const handlePopState = () => {
-      const prefix = getFolderFromUrl();
+      const prefix = sanitizePath(getFolderFromUrl());
       currentPrefixRef.current = prefix;
       setCurrentPrefixState(prefix);
     };
@@ -221,22 +245,23 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
     if (folderKeys.size) setFolders((prev) => prev.filter((f) => !folderKeys.has(f.key)));
   }, []);
 
-  // 樂觀重新命名（顯示名稱會立即更新，最終結果以背景對帳為準）
-  const renameLocalItem = useCallback(
-    (key: string, isFolder: boolean, newName: string) => {
-      if (isFolder) {
-        setFolders((prev) =>
-          prev.map((f) => (f.key === key ? { ...f, name: newName } : f))
-        );
-      } else {
-        setFiles((prev) =>
-          prev.map((f) => {
-            if (f.key !== key) return f;
-            const parent = key.split('/').slice(0, -1).join('/');
-            const nextKey = parent ? `${parent}/${newName}` : newName;
-            return { ...f, key: nextKey };
-          })
-        );
+  const upsertLocalItems = useCallback(
+    ({
+      files: incomingFiles = [],
+      folders: incomingFolders = [],
+      prefix
+    }: {
+      files?: MediaFile[];
+      folders?: FolderItem[];
+      /** Ignore an async mutation response if the user has since navigated elsewhere. */
+      prefix?: string;
+    }) => {
+      if (prefix !== undefined && sanitizePath(prefix) !== currentPrefixRef.current) return;
+      if (incomingFiles.length) {
+        setFiles((current) => prependOrReplaceItems(current, incomingFiles));
+      }
+      if (incomingFolders.length) {
+        setFolders((current) => prependOrReplaceItems(current, incomingFolders));
       }
     },
     []
@@ -245,7 +270,7 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   const hasImages = useMemo(() => files.some((file) => file.type === 'image'), [files]);
   const hasVideos = useMemo(() => files.some((file) => file.type === 'video'), [files]);
   const filterVisible = hasImages && hasVideos;
-  const searchEnabled = files.length > 0;
+  const searchEnabled = files.length > 0 || folders.length > 0;
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   // 若目前過濾選項隱藏，自動重設為 "all"
@@ -295,6 +320,11 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
       (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant', { numeric: true }) * dir
     );
   }, [folders, sortKey, sortDir]);
+
+  const filteredFolders = useMemo(() => {
+    if (!normalizedQuery) return sortedFolders;
+    return sortedFolders.filter((folder) => (folder.name || '').toLowerCase().includes(normalizedQuery));
+  }, [sortedFolders, normalizedQuery]);
 
   // Filters and sorting apply to every file loaded from the server so far.
   const hasMore = nextCursor !== null;
@@ -382,13 +412,15 @@ export function useMediaData({ pushMessage }: UseMediaDataProps) {
   return {
     files,
     folders: sortedFolders,
+    filteredFolders,
     loading,
+    loadError,
     loadingMore,
     currentPrefix,
     setCurrentPrefix,
     loadMedia,
     removeLocalItems,
-    renameLocalItem,
+    upsertLocalItems,
     filter,
     setFilter,
     searchQuery,

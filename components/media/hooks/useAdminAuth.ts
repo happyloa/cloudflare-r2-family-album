@@ -71,7 +71,7 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
 
       if (trimmed.length > MAX_ADMIN_TOKEN_LENGTH) {
         if (!options?.silent) {
-          pushMessage("管理密碼最多 15 個字", "error");
+          pushMessage(`管理密碼最多 ${MAX_ADMIN_TOKEN_LENGTH} 個字`, "error");
         }
         clearAdminSession();
         return false;

@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
 
@@ -57,25 +57,41 @@ export function AdminActionModal({
 
   const [inputValue, setInputValue] = useState(baseName);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+  const inputId = useId();
+  const rulesId = useId();
+  const resultId = useId();
+  const errorId = useId();
+  const helperId = useId();
 
   useEffect(() => {
     setInputValue(baseName);
     setIsSubmitting(false);
   }, [baseName]);
 
-  // Body scroll lock + Esc 關閉
+  // Body scroll lock
   useEffect(() => {
     if (!isRename) return;
     document.body.classList.add('modal-open');
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [isRename]);
+
+  useEffect(() => {
+    if (!isRename) return;
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Escape' && !isSubmitting) {
+        event.preventDefault();
+        onCancel();
+      }
     };
     document.addEventListener('keydown', handleKey);
     return () => {
-      document.body.classList.remove('modal-open');
       document.removeEventListener('keydown', handleKey);
     };
-  }, [isRename, onCancel]);
+  }, [isRename, isSubmitting, onCancel]);
 
   const { errorMessage, helperMessage, sanitizedName } = useMemo(() => {
     if (!target) return { errorMessage: '', helperMessage: '', sanitizedName: '' };
@@ -96,6 +112,17 @@ export function AdminActionModal({
 
   const finalName = sanitizedName ? `${sanitizedName}${extension}` : '';
   const confirmDisabled = Boolean(errorMessage) || isSubmitting;
+  const inputDescription = [
+    rulesId,
+    finalName ? resultId : '',
+    errorMessage ? errorId : helperMessage ? helperId : ''
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const handleCancel = () => {
+    if (!isSubmitting) onCancel();
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,9 +138,12 @@ export function AdminActionModal({
   return (
     <div
       className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center bg-surface-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
-      onClick={onCancel}
+      onClick={handleCancel}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={isSubmitting}
     >
       <div
         className="w-[min(560px,92vw)] overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
@@ -121,39 +151,60 @@ export function AdminActionModal({
       >
         <div className="border-b border-surface-800 px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-400">管理操作</p>
-          <h3 className="mt-2 text-lg font-semibold text-white">重新命名</h3>
-          <p className="mt-1 text-sm text-surface-400">對象：{currentName || target.key}</p>
+          <h3 id={titleId} className="mt-2 text-lg font-semibold text-white">
+            重新命名
+          </h3>
+          <p id={descriptionId} className="mt-1 text-sm text-surface-400">
+            對象：{currentName || target.key}
+          </p>
         </div>
 
         <form ref={formRef} className="space-y-4 px-5 py-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-surface-200" htmlFor="rename-input">
+            <label className="text-sm font-medium text-surface-200" htmlFor={inputId}>
               新名稱
             </label>
             <input
-              id="rename-input"
-              className="w-full rounded-2xl border border-surface-700 bg-surface-900/80 px-4 py-3 text-sm text-surface-100 outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
+              id={inputId}
+              name="newName"
+              className="w-full rounded-2xl border border-surface-700 bg-surface-900/80 px-4 py-3 text-sm text-surface-100 outline-none transition-colors focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60"
               inputMode="text"
               autoComplete="off"
               autoCapitalize="none"
               autoCorrect="off"
+              autoFocus
+              disabled={isSubmitting}
+              aria-invalid={Boolean(errorMessage)}
+              aria-describedby={inputDescription}
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
               placeholder="輸入新的檔案或資料夾名稱（支援表情符號）"
             />
-            {finalName ? <p className="text-xs text-surface-500">完成後名稱：{finalName}</p> : null}
+            {finalName ? (
+              <p id={resultId} className="text-xs text-surface-500">
+                完成後名稱：{finalName}
+              </p>
+            ) : null}
           </div>
 
-          <ul className="space-y-1 rounded-2xl border border-surface-700/50 bg-surface-950/40 px-4 py-3 text-xs text-surface-500">
+          <ul id={rulesId} className="space-y-1 rounded-2xl border border-surface-700/50 bg-surface-950/40 px-4 py-3 text-xs text-surface-500">
             <li>會自動移除特殊字元：&lt;&gt;:&quot;/\\|?*</li>
             {target.isFolder ? <li>資料夾名稱最多 {maxNameLength} 個字</li> : null}
           </ul>
 
-          {errorMessage ? <p className="text-sm text-red-300">{errorMessage}</p> : null}
-          {!errorMessage && helperMessage ? <p className="text-sm text-primary-300">{helperMessage}</p> : null}
+          {errorMessage ? (
+            <p id={errorId} role="alert" className="text-sm text-red-300">
+              {errorMessage}
+            </p>
+          ) : null}
+          {!errorMessage && helperMessage ? (
+            <p id={helperId} className="text-sm text-primary-300">
+              {helperMessage}
+            </p>
+          ) : null}
 
           {isSubmitting ? (
-            <div className="flex items-center gap-2 rounded-2xl border border-primary-500/40 bg-primary-500/10 px-4 py-3 text-sm text-primary-200">
+            <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-2xl border border-primary-500/40 bg-primary-500/10 px-4 py-3 text-sm text-primary-200">
               <span
                 className="h-4 w-4 animate-spin rounded-full border-2 border-primary-300/70 border-t-transparent"
                 aria-hidden="true"
@@ -164,15 +215,15 @@ export function AdminActionModal({
 
           <div className="flex flex-col gap-3 border-t border-surface-800 pt-4 sm:flex-row sm:justify-end">
             <button
-              className="rounded-full border border-surface-700 px-5 py-2 text-sm font-semibold text-surface-200 transition-all duration-200 hover:border-surface-500 hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="rounded-full border border-surface-700 px-5 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-surface-500 hover:bg-surface-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
               type="button"
-              onClick={onCancel}
+              onClick={handleCancel}
               disabled={isSubmitting}
             >
               取消
             </button>
             <button
-              className="rounded-full bg-gradient-to-r from-primary-500 to-accent-500 px-5 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-accent-400 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="rounded-full bg-primary-700 px-5 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
               type="submit"
               disabled={confirmDisabled}
             >

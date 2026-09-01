@@ -3,9 +3,15 @@ import { useState } from "react";
 import { AdminActionTarget, AdminActionType } from "../AdminActionModal";
 import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "../constants";
 import { getDepth, sanitizeName } from "../sanitize";
-import { MessageTone } from "../types";
+import { FolderItem, MediaFile, MessageTone } from "../types";
 
 type BatchItem = { key: string; isFolder: boolean };
+
+type ConfirmedRename = {
+  key: string;
+  name: string;
+  url?: string;
+};
 
 type UseMediaActionsProps = {
   authorizedFetch: (
@@ -16,7 +22,7 @@ type UseMediaActionsProps = {
   pushMessage: (text: string, tone: MessageTone) => void;
   loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
   removeLocalItems: (items: BatchItem[]) => void;
-  renameLocalItem: (key: string, isFolder: boolean, newName: string) => void;
+  upsertLocalItems: (items: { files?: MediaFile[]; folders?: FolderItem[]; prefix?: string }) => void;
   currentPrefix: string;
 };
 
@@ -30,6 +36,50 @@ function describeActionFailure(status: number, fallback: string) {
   return fallback;
 }
 
+function normalizePrefix(prefix: string) {
+  return prefix.replace(/^\/+|\/+$/g, "").trim();
+}
+
+function getParentPrefix(key: string) {
+  const parts = normalizePrefix(key).split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function isAlreadyInTargetParent(item: BatchItem, targetPrefix: string) {
+  return getParentPrefix(item.key) === normalizePrefix(targetPrefix);
+}
+
+function readConfirmedRename(data: unknown, isFolder: boolean): ConfirmedRename | null {
+  if (!data || typeof data !== "object") return null;
+  const body = data as Record<string, unknown>;
+
+  if (isFolder) {
+    const folder = body.folder;
+    if (!folder || typeof folder !== "object") return null;
+    const value = folder as Record<string, unknown>;
+    if (typeof value.key !== "string" || typeof value.name !== "string") return null;
+    return { key: value.key, name: value.name };
+  }
+
+  const media = body.media;
+  if (!media || typeof media !== "object") return null;
+  const value = media as Record<string, unknown>;
+  if (
+    typeof value.key !== "string" ||
+    typeof value.url !== "string" ||
+    (value.type !== "image" && value.type !== "video")
+  ) {
+    return null;
+  }
+
+  return {
+    key: value.key,
+    name: value.key.split("/").pop() ?? value.key,
+    url: value.url,
+  };
+}
+
 /**
  * useMediaActions Hook: 媒體與資料夾操作邏輯
  * 採樂觀更新：先即時調整本地清單，再於背景與伺服器對帳，操作失敗時自動還原。
@@ -40,7 +90,7 @@ export function useMediaActions({
   pushMessage,
   loadMedia,
   removeLocalItems,
-  renameLocalItem,
+  upsertLocalItems,
   currentPrefix,
 }: UseMediaActionsProps) {
   const [adminAction, setAdminAction] = useState<{
@@ -94,7 +144,11 @@ export function useMediaActions({
       }
 
       pushMessage("已建立新資料夾", "success");
+      const data = (await response.json().catch(() => null)) as { folder?: FolderItem } | null;
       await loadMedia(currentPrefix, { silent: true });
+      if (data?.folder && typeof data.folder.key === 'string' && typeof data.folder.name === 'string') {
+        upsertLocalItems({ folders: [data.folder], prefix: currentPrefix });
+      }
       return true;
     } catch {
       pushMessage("建立資料夾時發生錯誤，請稍後再試。", "error");
@@ -130,9 +184,6 @@ export function useMediaActions({
     // 重新命名
     if (payload.action === "rename") {
       if (!payload.newName) return;
-      // 樂觀更新顯示名稱
-      renameLocalItem(payload.key, payload.isFolder, payload.newName);
-      setAdminAction(null);
       try {
         const response = await authorizedFetch("/api/media", {
           method: "PATCH",
@@ -151,31 +202,27 @@ export function useMediaActions({
           return;
         }
 
-        // 若同資料夾已有同名項目，伺服器會自動加上編號（例如「B (2).jpg」）；
-        // 本地樂觀更新套用的是使用者輸入的原始名稱，這裡用伺服器實際採用的名稱校正，
-        // 避免跟既有項目的 key 撞在一起而讓 React 清單短暫顯示錯亂。
-        const data = (await response.json().catch(() => null)) as {
-          folder?: { key?: string };
-          media?: { key?: string };
-        } | null;
-        if (payload.isFolder) {
-          const actualName = (data?.folder?.key ?? "").split("/").pop();
-          if (actualName && actualName !== payload.newName) {
-            renameLocalItem(payload.key, true, actualName);
-          }
-        } else {
-          const actualKey = data?.media?.key;
-          if (typeof actualKey === "string") {
-            const actualName = actualKey.split("/").pop() ?? payload.newName;
-            if (actualName !== payload.newName) {
-              const parent = payload.key.split("/").slice(0, -1).join("/");
-              const optimisticKey = parent ? `${parent}/${payload.newName}` : payload.newName;
-              renameLocalItem(optimisticKey, false, actualName);
-            }
-          }
+        // 重新命名會同時改變檔案 key 與公開 URL。維持對話框的 submitting 狀態，
+        // 直到用伺服器確認後的清單完整取代本地資料，避免使用者立即預覽/開啟時
+        // 仍拿到舊 key 或舊 URL。
+        const confirmedRename = readConfirmedRename(
+          await response.json().catch(() => null),
+          payload.isFolder,
+        );
+        await loadMedia(currentPrefix, { silent: true });
+        setAdminAction(null);
+
+        if (!confirmedRename) {
+          pushMessage("重新命名完成，但伺服器回傳資料不完整；已重新整理清單。", "info");
+          scheduleReconcile();
+          return;
         }
 
-        pushMessage("已更新名稱", "success");
+        const adjustedName = confirmedRename.name !== payload.newName;
+        pushMessage(
+          adjustedName ? `已更新名稱為「${confirmedRename.name}」` : "已更新名稱",
+          "success",
+        );
         scheduleReconcile();
       } catch {
         pushMessage("重新命名時發生錯誤，請稍後再試。", "error");
@@ -187,6 +234,13 @@ export function useMediaActions({
     // 移動（項目離開目前資料夾，樂觀移除）
     if (payload.action === "move") {
       if (payload.targetPrefix === undefined) return;
+      const targetPrefix = normalizePrefix(payload.targetPrefix);
+      if (isAlreadyInTargetParent({ key: payload.key, isFolder: payload.isFolder }, targetPrefix)) {
+        setAdminAction(null);
+        pushMessage(payload.isFolder ? "資料夾已在目標位置，未移動。" : "媒體已在目標資料夾，未移動。", "info");
+        return;
+      }
+
       removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
       setAdminAction(null);
       try {
@@ -196,7 +250,7 @@ export function useMediaActions({
           body: JSON.stringify({
             action: "move",
             key: payload.key,
-            targetPrefix: payload.targetPrefix,
+            targetPrefix,
             isFolder: payload.isFolder,
           }),
         });
@@ -220,19 +274,40 @@ export function useMediaActions({
   // 批次移動
   const handleBatchMove = async (items: BatchItem[], targetPrefix: string) => {
     if (items.length === 0) return;
-    removeLocalItems(items);
+    const normalizedTargetPrefix = normalizePrefix(targetPrefix);
+    const movableItems = items.filter(
+      (item) => !isAlreadyInTargetParent(item, normalizedTargetPrefix),
+    );
+    const skippedCount = items.length - movableItems.length;
+
+    if (movableItems.length === 0) {
+      pushMessage("所選項目都已在目標資料夾，未移動。", "info");
+      return;
+    }
+
+    // 只移除真的會離開目前資料夾的項目；同資料夾 no-op 必須留在畫面上。
+    removeLocalItems(movableItems);
     try {
       const response = await authorizedFetch("/api/media", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "batch-move", items, targetPrefix }),
+        body: JSON.stringify({
+          action: "batch-move",
+          items: movableItems,
+          targetPrefix: normalizedTargetPrefix,
+        }),
       });
       if (!response.ok) {
         pushMessage(describeActionFailure(response.status, "批次移動失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
         return;
       }
-      pushMessage(`已移動 ${items.length} 個項目`, "success");
+      pushMessage(
+        skippedCount > 0
+          ? `已移動 ${movableItems.length} 個項目；略過 ${skippedCount} 個已在目標資料夾的項目。`
+          : `已移動 ${movableItems.length} 個項目`,
+        skippedCount > 0 ? "info" : "success",
+      );
       scheduleReconcile();
     } catch {
       pushMessage("批次移動時發生錯誤，請稍後再試。", "error");

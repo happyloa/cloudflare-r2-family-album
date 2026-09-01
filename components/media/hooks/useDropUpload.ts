@@ -4,7 +4,7 @@ import { uploadFiles } from '@/lib/upload/client';
 import { MAX_FILE_COUNT, MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
 
 import { BUCKET_LIMIT_BYTES } from '../constants';
-import { MessageTone } from '../types';
+import { MediaFile, MessageTone } from '../types';
 
 type ConfirmFn = (opts: {
   title?: string;
@@ -23,6 +23,7 @@ type UseDropUploadProps = {
   usageBytes: number | null;
   refreshUsage: (force?: boolean) => void | Promise<void>;
   loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
+  upsertLocalItems: (items: { files?: MediaFile[]; prefix?: string }) => void;
 };
 
 /**
@@ -38,7 +39,8 @@ export function useDropUpload({
   confirm,
   usageBytes,
   refreshUsage,
-  loadMedia
+  loadMedia,
+  upsertLocalItems
 }: UseDropUploadProps) {
   const [dropActive, setDropActive] = useState(false);
   const [dropUploading, setDropUploading] = useState(false);
@@ -96,22 +98,65 @@ export function useDropUpload({
 
         setDropUploading(true);
         setDropProgress(0);
+        const uploadPrefix = currentPrefix;
         const response = await uploadFiles({
           files: within,
-          path: currentPrefix,
+          path: uploadPrefix,
           adminToken: adminTokenRef.current,
           onProgress: (percent) => setDropProgress(percent ?? 0)
         });
-        if (!response.ok) {
-          pushMessage('上傳失敗，請稍後再試。', 'error');
-        } else {
-          pushMessage(
-            `已上傳 ${within.length} 個檔案${oversized > 0 ? `（略過 ${oversized} 個過大檔案）` : ''}`,
-            'success'
-          );
-          await loadMedia(currentPrefix, { silent: true });
+
+        // API 會回傳實際寫入成功的 media。不要以送出的檔案數量當作成功數，
+        // 否則未來 API 支援部分成功時，使用者會看到不正確的成功提示。
+        const uploadedCount = response.media.length;
+        const remainingCount = Math.max(0, within.length - uploadedCount);
+        const oversizedSuffix = oversized > 0 ? `（略過 ${oversized} 個過大檔案）` : '';
+
+        // 成功回應或有明確成功子集時，都要立即重抓清單與容量。後者能讓 UI
+        // 在部分失敗時仍反映已成功寫入的檔案；沒有成功結果的錯誤回應則不假設有副作用。
+        if (response.ok || uploadedCount > 0) {
+          await loadMedia(uploadPrefix, { silent: true });
+          upsertLocalItems({ files: response.media, prefix: uploadPrefix });
+          // 容量統計可能比清單更新慢；觸發刷新即可，不讓上傳覆蓋層為此持續卡住。
           void refreshUsage(true);
         }
+
+        if (!response.ok) {
+          if (uploadedCount > 0) {
+            const incompleteSuffix = remainingCount > 0 ? `，另有 ${remainingCount} 個未完成` : '';
+            pushMessage(
+              `已上傳 ${uploadedCount} 個檔案${incompleteSuffix}；伺服器回傳失敗狀態，已重新整理清單與容量。${oversizedSuffix}`,
+              'error'
+            );
+            return;
+          }
+
+          pushMessage(
+            response.error ? `上傳失敗：${response.error}` : '上傳失敗，請稍後再試。',
+            'error'
+          );
+          return;
+        }
+
+        if (!response.hasMediaResult) {
+          pushMessage('伺服器未回報上傳結果，已重新整理清單與容量，請確認檔案是否出現。', 'info');
+          return;
+        }
+
+        if (uploadedCount === 0) {
+          pushMessage('伺服器未確認任何檔案已上傳，已重新整理清單與容量。', 'error');
+          return;
+        }
+
+        if (remainingCount > 0) {
+          pushMessage(
+            `已上傳 ${uploadedCount} 個檔案，另有 ${remainingCount} 個未完成；已重新整理清單與容量。${oversizedSuffix}`,
+            'info'
+          );
+          return;
+        }
+
+        pushMessage(`已上傳 ${uploadedCount} 個檔案${oversizedSuffix}`, 'success');
       } catch {
         pushMessage('上傳時發生錯誤，請稍後再試。', 'error');
       } finally {
@@ -119,7 +164,7 @@ export function useDropUpload({
         setDropUploading(false);
       }
     },
-    [currentPrefix, adminTokenRef, requestAdminToken, pushMessage, confirm, usageBytes, refreshUsage, loadMedia]
+    [currentPrefix, adminTokenRef, requestAdminToken, pushMessage, confirm, usageBytes, refreshUsage, loadMedia, upsertLocalItems]
   );
 
   useEffect(() => {

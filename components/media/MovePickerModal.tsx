@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { getDepth } from './sanitize';
@@ -44,6 +44,7 @@ export function MovePickerModal({
   const [browsePrefix, setBrowsePrefix] = useState('');
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -54,6 +55,8 @@ export function MovePickerModal({
   const mountedRef = useRef(true);
   const resettingPrefixRef = useRef(false);
   const dialogRef = useFocusTrap<HTMLDivElement>(open);
+  const titleId = useId();
+  const descriptionId = useId();
 
   const movingFolder = items.some((item) => item.isFolder);
   const sourceFolderKeys = useMemo(
@@ -73,6 +76,7 @@ export function MovePickerModal({
 
     if (mountedRef.current) {
       setLoading(true);
+      setLoadError(null);
       setLoadingMore(false);
       setFolders([]);
       setNextCursor(null);
@@ -109,6 +113,7 @@ export function MovePickerModal({
 
       setFolders([]);
       setNextCursor(null);
+      setLoadError('無法載入目的地資料夾，請檢查連線後再試一次。');
     } finally {
       if (!mountedRef.current || requestVersion !== requestVersionRef.current) {
         return;
@@ -215,15 +220,24 @@ export function MovePickerModal({
     setBrowsePrefix(startPrefix);
     setSubmitting(false);
     document.body.classList.add('modal-open');
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [open, startPrefix]);
+
+  useEffect(() => {
+    if (!open) return;
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Escape' && !submitting) {
+        event.preventDefault();
+        onCancel();
+      }
     };
     document.addEventListener('keydown', handleKey);
     return () => {
-      document.body.classList.remove('modal-open');
       document.removeEventListener('keydown', handleKey);
     };
-  }, [open, startPrefix, onCancel]);
+  }, [open, onCancel, submitting]);
 
   useEffect(() => {
     if (!open) return;
@@ -252,7 +266,7 @@ export function MovePickerModal({
   const browseDepth = getDepth(browsePrefix);
   const targetTooDeep = movingFolder ? browseDepth + 1 > maxDepth : browseDepth > maxDepth;
   const targetIsSource = isSourceOrDescendant(browsePrefix);
-  const confirmDisabled = submitting || targetTooDeep || targetIsSource;
+  const confirmDisabled = submitting || loading || Boolean(loadError) || targetTooDeep || targetIsSource;
   const canEnter = (folderKey: string) => !isSourceOrDescendant(folderKey) && getDepth(folderKey) < maxDepth;
 
   const handleConfirm = async () => {
@@ -265,12 +279,19 @@ export function MovePickerModal({
     }
   };
 
+  const handleCancel = () => {
+    if (!submitting) onCancel();
+  };
+
   return (
     <div
       className="fixed inset-0 z-[70] flex min-h-screen w-screen items-center justify-center bg-surface-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
       role="dialog"
       aria-modal="true"
-      onClick={onCancel}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={submitting}
+      onClick={handleCancel}
     >
       <div
         ref={dialogRef}
@@ -279,31 +300,58 @@ export function MovePickerModal({
       >
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-400">移動到</p>
-          <h3 className="text-lg font-semibold text-white">移動 {items.length} 個項目</h3>
-          <p className="text-sm text-surface-400">點選資料夾進入，再按「移動到這裡」。</p>
+          <h3 id={titleId} className="text-lg font-semibold text-white">
+            移動 {items.length} 個項目
+          </h3>
+          <p id={descriptionId} className="text-sm text-surface-400">
+            點選資料夾進入，再按「移動到這裡」。
+          </p>
         </div>
 
         {/* 目的地麵包屑 */}
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-700/50 bg-surface-950/50 px-3 py-2 text-sm">
+        <nav aria-label="目的地路徑" className="flex flex-wrap items-center gap-1 rounded-xl border border-surface-700/50 bg-surface-950/50 px-3 py-2 text-sm">
           {trail.map((crumb, index) => (
             <span key={crumb.key} className="flex items-center">
               {index > 0 ? <span className="mx-1 text-surface-600">/</span> : null}
               <button
                 type="button"
                 onClick={() => browseTo(crumb.key)}
-                className="rounded-md px-1.5 py-0.5 font-medium text-surface-200 transition-colors hover:bg-surface-800 hover:text-primary-200 cursor-pointer"
+                disabled={submitting}
+                aria-current={index === trail.length - 1 ? 'location' : undefined}
+                className="rounded-md px-1.5 py-0.5 font-medium text-surface-200 transition-colors hover:bg-surface-800 hover:text-primary-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
               >
-                {index === 0 ? '🏠 根目錄' : crumb.label}
+                {index === 0 ? (
+                  <>
+                    <span aria-hidden="true">🏠</span> 根目錄
+                  </>
+                ) : (
+                  crumb.label
+                )}
               </button>
             </span>
           ))}
-        </div>
+        </nav>
 
         {/* 子資料夾清單 */}
-        <div className="max-h-64 min-h-[120px] space-y-1 overflow-y-auto rounded-xl border border-surface-700/50 bg-surface-950/40 p-2">
+        <div aria-label="可選擇的目的地資料夾" className="max-h-64 min-h-[120px] space-y-1 overflow-y-auto rounded-xl border border-surface-700/50 bg-surface-950/40 p-2">
           {loading ? (
-            <div className="flex items-center justify-center py-10">
+            <div role="status" aria-live="polite" className="flex items-center justify-center py-10">
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" />
+              <span className="sr-only">正在載入資料夾</span>
+            </div>
+          ) : loadError ? (
+            <div className="flex min-h-[120px] flex-col items-center justify-center gap-3 px-4 text-center">
+              <p role="alert" className="text-sm text-red-200">
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadFirstPage(browsePrefix)}
+                disabled={submitting}
+                className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                再試一次
+              </button>
             </div>
           ) : (
             <>
@@ -317,11 +365,12 @@ export function MovePickerModal({
                 <button
                   key={folder.key}
                   type="button"
-                  disabled={!enterable}
+                  disabled={submitting || !enterable}
                   onClick={() => enterable && browseTo(folder.key)}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  aria-label={`${folder.name || '未命名'}${isSrc ? '，來源資料夾，無法選擇' : !enterable ? '，已達最大層數' : '，進入資料夾'}`}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/10 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                 >
-                  <span className="text-lg leading-none">📂</span>
+                  <span aria-hidden="true" className="text-lg leading-none">📂</span>
                   <span className="min-w-0 flex-1 truncate">{folder.name || '未命名'}</span>
                   {isSrc ? (
                     <span className="text-xs text-surface-500">來源</span>
@@ -339,8 +388,8 @@ export function MovePickerModal({
                   <button
                     type="button"
                     onClick={() => void loadMore()}
-                    disabled={loadingMore}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-surface-700/70 px-3 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-wait disabled:opacity-60"
+                    disabled={loadingMore || submitting}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-surface-700/70 px-3 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-wait disabled:opacity-60"
                   >
                     {loadingMore ? (
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden />
@@ -364,9 +413,9 @@ export function MovePickerModal({
         <div className="flex justify-end gap-3">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             disabled={submitting}
-            className="rounded-full border border-surface-700 px-5 py-2 text-sm font-semibold text-surface-200 transition-all duration-200 hover:border-surface-500 hover:bg-surface-800 disabled:opacity-50 cursor-pointer"
+            className="rounded-full border border-surface-700 px-5 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-surface-500 hover:bg-surface-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             取消
           </button>
@@ -374,10 +423,10 @@ export function MovePickerModal({
             type="button"
             onClick={handleConfirm}
             disabled={confirmDisabled}
-            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-primary-500 to-primary-600 px-5 py-2 text-sm font-semibold text-surface-950 shadow-glow transition-all duration-200 hover:from-primary-400 hover:to-primary-500 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 rounded-full bg-primary-700 px-5 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             {submitting ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-surface-900/70 border-t-transparent" aria-hidden />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" aria-hidden />
             ) : null}
             <span>移動到這裡</span>
           </button>

@@ -46,19 +46,21 @@ type PreviewState = {
  * 整合媒體瀏覽、資料夾導覽、權限驗證、上傳、檔案操作，以及 Drive 風的多選 / 右鍵 / 拖曳上傳。
  * 拖曳上傳、刪除 Undo、頂部工具列分別抽到 useDropUpload / useUndoableDelete / Toolbar。
  */
-export function MediaGrid() {
+export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   const { message, messageTone, pushMessage } = useMessage();
   const { passwordReq, confirmReq, openPassword, confirm, closePassword, closeConfirm } = useDialogs();
 
   const {
     files,
     folders,
+    filteredFolders,
     loading,
+    loadError,
     currentPrefix,
     setCurrentPrefix,
     loadMedia,
     removeLocalItems,
-    renameLocalItem,
+    upsertLocalItems,
     filter,
     setFilter,
     searchQuery,
@@ -73,7 +75,7 @@ export function MediaGrid() {
     filteredFiles,
     filterVisible,
     searchEnabled
-  } = useMediaData({ pushMessage });
+  } = useMediaData({ pushMessage, initialPrefix });
 
 
   const { adminTokenRef, isAdmin, clearAdminSession, requestAdminToken, authorizedFetch } = useAdminAuth({
@@ -96,7 +98,7 @@ export function MediaGrid() {
     pushMessage,
     loadMedia,
     removeLocalItems,
-    renameLocalItem,
+    upsertLocalItems,
     currentPrefix
   });
 
@@ -111,10 +113,10 @@ export function MediaGrid() {
   // 用「已篩選的完整清單」而非僅可見清單，避免排序/捲動重設 visibleCount 時誤清選取。
   const orderedIds = useMemo(
     () => [
-      ...folders.map((folder) => makeSelectionId(folder.key, true)),
+      ...filteredFolders.map((folder) => makeSelectionId(folder.key, true)),
       ...filteredFiles.map((file) => makeSelectionId(file.key, false))
     ],
-    [folders, filteredFiles]
+    [filteredFolders, filteredFiles]
   );
   const selection = useSelection(orderedIds);
   const { menu, openMenu, closeMenu } = useContextMenu();
@@ -127,7 +129,8 @@ export function MediaGrid() {
     confirm,
     usageBytes: usage.usageBytes,
     refreshUsage: usage.refresh,
-    loadMedia
+    loadMedia,
+    upsertLocalItems
   });
 
   const { pendingDelete, requestDelete, undoDelete } = useUndoableDelete({
@@ -197,7 +200,11 @@ export function MediaGrid() {
 
   const handleMoveConfirm = async (targetPrefix: string) => {
     const items = moveItems ?? [];
-    setMoveItems(null);
+    if (items.length === 0) {
+      setMoveItems(null);
+      return;
+    }
+
     if (items.length === 1) {
       await handleAdminActionConfirm({
         action: 'move',
@@ -209,6 +216,7 @@ export function MediaGrid() {
       selection.clear();
       await handleBatchMove(items, targetPrefix);
     }
+    setMoveItems(null);
   };
 
   // 右鍵 / 溢位選單：開啟（資料夾進入、檔案預覽）
@@ -256,7 +264,8 @@ export function MediaGrid() {
     Boolean(moveItems) ||
     newFolderOpen ||
     Boolean(passwordReq) ||
-    Boolean(confirmReq);
+    Boolean(confirmReq) ||
+    menu.open;
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -273,7 +282,7 @@ export function MediaGrid() {
       if (anyModalOpen || !isAdmin) return;
 
       if ((event.ctrlKey || event.metaKey) && (event.key === 'a' || event.key === 'A')) {
-        if (folders.length || filteredFiles.length) {
+        if (filteredFolders.length || filteredFiles.length) {
           event.preventDefault();
           selection.selectAll();
         }
@@ -290,9 +299,11 @@ export function MediaGrid() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [anyModalOpen, isAdmin, selection, folders.length, filteredFiles.length, requestDelete]);
+  }, [anyModalOpen, isAdmin, selection, filteredFolders.length, filteredFiles.length, requestDelete]);
 
   const hasItems = files.length > 0 || folders.length > 0;
+  const hasSearchQuery = Boolean(searchQuery.trim());
+  const hasSearchResults = filteredFiles.length > 0 || filteredFolders.length > 0;
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
 
   return (
@@ -363,10 +374,35 @@ export function MediaGrid() {
         <MediaSkeleton />
       ) : (
         <>
-          {!hasItems && !hasMore && <EmptyState atMaxDepth={depth >= MAX_FOLDER_DEPTH} />}
+          {loadError ? (
+            <div
+              role="alert"
+              className="flex flex-col gap-3 rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-4 text-sm text-red-50 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <p className="font-semibold">無法載入目前資料夾</p>
+                <p className="mt-1 text-red-100/80">{loadError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadMedia(currentPrefix)}
+                className="shrink-0 rounded-lg border border-red-300/40 bg-surface-950/30 px-3 py-2 font-semibold text-red-50 transition-colors hover:bg-red-500/20"
+              >
+                再試一次
+              </button>
+            </div>
+          ) : null}
+
+          {!loadError && !hasItems && !hasMore && <EmptyState atMaxDepth={depth >= MAX_FOLDER_DEPTH} />}
+
+          {hasSearchQuery && hasItems && !hasSearchResults ? (
+            <div className="rounded-2xl border border-surface-700/50 bg-surface-800/50 px-4 py-3 text-sm text-surface-200" role="status">
+              找不到符合「{searchQuery.trim()}」的資料夾或媒體檔。
+            </div>
+          ) : null}
 
           <FolderGrid
-            folders={folders}
+            folders={filteredFolders}
             isAdmin={isAdmin}
             onEnter={handleEnterFolder}
             isRootLevel={currentPrefix === ''}
@@ -476,7 +512,7 @@ export function MediaGrid() {
         onClear={selection.clear}
       />
 
-      <UndoToast open={Boolean(pendingDelete)} count={pendingDelete?.length ?? 0} onUndo={undoDelete} />
+      <UndoToast open={Boolean(pendingDelete)} count={pendingDelete?.items.length ?? 0} onUndo={undoDelete} />
 
       <DropzoneOverlay
         active={dropActive && isAdmin}

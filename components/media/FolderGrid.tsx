@@ -1,6 +1,6 @@
 'use client';
 
-import { type DragEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
+import { type DragEvent, type KeyboardEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
 
 import { ContextTarget } from './hooks/useContextMenu';
 import { useLongPress } from './hooks/useLongPress';
@@ -117,6 +117,15 @@ export function FolderGrid({
     onEnter(folder.key);
   };
 
+  const handleCardKeyDown = (folder: FolderItem, event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!isAdmin || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return;
+
+    event.preventDefault();
+    const id = makeSelectionId(folder.key, true);
+    onItemClick(id, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
+  };
+
   const renderCard = (folder: FolderItem) => {
     const id = makeSelectionId(folder.key, true);
     const selected = isAdmin && isSelected(id);
@@ -125,17 +134,14 @@ export function FolderGrid({
     return (
       <article
         key={folder.key}
-        className={`group relative flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl border bg-surface-800/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:bg-surface-800/70 ${
+        className={`group relative min-w-0 rounded-2xl border bg-surface-800/40 transition-all duration-200 hover:-translate-y-0.5 hover:bg-surface-800/70 ${
           selected
             ? 'border-primary-500 ring-2 ring-primary-500/60'
             : isDropping
               ? 'border-primary-400 ring-2 ring-primary-400/60'
               : 'border-surface-700/60 hover:border-primary-500/40'
         }`}
-        role="button"
-        tabIndex={0}
         draggable={isAdmin}
-        onClick={(event) => handleCardClick(folder, event)}
         onContextMenu={(event) => {
           if (!isAdmin) return;
           onContextMenu(event, { key: folder.key, isFolder: true });
@@ -162,15 +168,29 @@ export function FolderGrid({
           if (dropTarget === folder.key) setDropTarget(null);
         }}
         onDrop={(event) => handleDrop(event, folder.key)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            if (isAdmin && selectionMode) onToggleSelect(id);
-            else onEnter(folder.key);
-          }
-        }}
-        aria-label={isDragging ? `將項目移動到 ${folder.name} 資料夾` : folder.name || '資料夾'}
       >
+        <button
+          type="button"
+          onClick={(event) => handleCardClick(folder, event)}
+          onKeyDown={(event) => handleCardKeyDown(folder, event)}
+          className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl p-4 text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-400/70"
+          aria-label={
+            isDragging
+              ? `將項目移動到 ${folder.name || '未命名'} 資料夾`
+              : isAdmin && selectionMode
+                ? `${selected ? '取消選取' : '選取'}資料夾 ${folder.name || '未命名'}`
+                : `開啟資料夾 ${folder.name || '未命名'}`
+          }
+        >
+          <span
+            className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-2xl ring-1 ring-primary-500/20"
+            aria-hidden
+          >
+            📁
+          </span>
+          <span className="min-w-0 flex-1 break-words text-base font-semibold text-surface-50">{folder.name || '未命名'}</span>
+        </button>
+
         {isAdmin ? (
           <button
             type="button"
@@ -178,7 +198,8 @@ export function FolderGrid({
               event.stopPropagation();
               onToggleSelect(id);
             }}
-            className={`absolute left-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer ${
+            onTouchStart={(event) => event.stopPropagation()}
+            className={`absolute left-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 ${
               selected
                 ? 'border-primary-400 bg-primary-500 text-surface-950'
                 : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
@@ -192,11 +213,6 @@ export function FolderGrid({
           </button>
         ) : null}
 
-        <div className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-2xl ring-1 ring-primary-500/20">
-          📁
-        </div>
-        <h4 className="min-w-0 flex-1 break-words text-base font-semibold text-surface-50">{folder.name || '未命名'}</h4>
-
         {isAdmin ? (
           <button
             type="button"
@@ -204,7 +220,8 @@ export function FolderGrid({
               event.stopPropagation();
               onContextMenu(event, { key: folder.key, isFolder: true });
             }}
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-surface-300 opacity-0 transition-all duration-150 hover:bg-surface-900/70 hover:text-white group-hover:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
+            onTouchStart={(event) => event.stopPropagation()}
+            className="absolute right-2.5 top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-full text-surface-300 opacity-0 transition-all duration-150 hover:bg-surface-900/70 hover:text-white group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 [@media(hover:none)]:opacity-100 cursor-pointer"
             aria-label="更多操作"
           >
             <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">

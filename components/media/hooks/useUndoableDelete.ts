@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageTone } from '../types';
 
 type Item = { key: string; isFolder: boolean };
+type PendingDelete = { items: Item[]; prefix: string };
 
 type ConfirmFn = (opts: {
   title?: string;
@@ -40,8 +41,8 @@ export function useUndoableDelete({
   loadMedia,
   onDeleted
 }: UseUndoableDeleteProps) {
-  const [pendingDelete, setPendingDelete] = useState<Item[] | null>(null);
-  const pendingDeleteRef = useRef<Item[] | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const pendingDeleteRef = useRef<PendingDelete | null>(null);
   const deleteTimerRef = useRef<number | null>(null);
 
   // 把尚在 Undo 視窗的刪除確實送出（換資料夾或卸載時無法跨資料夾復原）
@@ -53,7 +54,7 @@ export function useUndoableDelete({
     const pending = pendingDeleteRef.current;
     pendingDeleteRef.current = null;
     setPendingDelete(null);
-    if (pending && pending.length) void commitDeleteOnServer(pending);
+    if (pending && pending.items.length) void commitDeleteOnServer(pending.items);
   };
   const flushRef = useRef(flushPendingDelete);
   flushRef.current = flushPendingDelete;
@@ -62,14 +63,15 @@ export function useUndoableDelete({
     flushPendingDelete(); // 先送出上一批，避免堆疊
     removeLocalItems(items);
     onDeleted?.();
-    pendingDeleteRef.current = items;
-    setPendingDelete(items);
+    const pending = { items, prefix: currentPrefix };
+    pendingDeleteRef.current = pending;
+    setPendingDelete(pending);
     deleteTimerRef.current = window.setTimeout(() => {
       deleteTimerRef.current = null;
       const pending = pendingDeleteRef.current;
       pendingDeleteRef.current = null;
       setPendingDelete(null);
-      if (pending) void commitDeleteOnServer(pending);
+      if (pending) void commitDeleteOnServer(pending.items);
     }, UNDO_WINDOW_MS);
   };
 
@@ -78,9 +80,12 @@ export function useUndoableDelete({
       window.clearTimeout(deleteTimerRef.current);
       deleteTimerRef.current = null;
     }
+    const pending = pendingDeleteRef.current;
     pendingDeleteRef.current = null;
     setPendingDelete(null);
-    void loadMedia(currentPrefix, { silent: true });
+    if (pending?.prefix === currentPrefix) {
+      void loadMedia(currentPrefix, { silent: true });
+    }
     pushMessage('已復原刪除', 'info');
   };
 
@@ -112,7 +117,7 @@ export function useUndoableDelete({
   // 換資料夾或卸載時，把待刪除確實送出
   useEffect(() => {
     return () => flushRef.current();
-  }, [currentPrefix]);
+  }, []);
 
   return { pendingDelete, requestDelete, undoDelete };
 }
