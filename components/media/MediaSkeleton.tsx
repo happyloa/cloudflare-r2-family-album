@@ -1,102 +1,83 @@
 'use client';
 
-const folderPlaceholders = Array.from({ length: 3 });
+const folderPlaceholders = Array.from({ length: 4 });
 const mediaPlaceholders = Array.from({ length: 8 });
 
 /**
- * MediaSkeleton: 媒體載入中骨架畫面
- * 使用 shimmer 動畫效果提供更真實的載入體驗
+ * Matches FolderGrid and MediaSection while album data is loading.
+ * The visual placeholders are decorative; assistive technology receives one status.
  */
-export function MediaSkeleton() {
+export function MediaSkeleton({ isRootLevel = true }: { isRootLevel?: boolean }) {
   return (
-    <div className="space-y-6" aria-label="媒體載入中骨架畫面">
-      {/* 資料夾區塊骨架 */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="skeleton-shimmer h-6 w-24 rounded" />
-          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-primary-700/20" />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {folderPlaceholders.map((_, index) => (
-            <div
-              key={`folder-skeleton-${index}`}
-              className="flex flex-col gap-3 rounded-2xl border border-surface-700/50 bg-surface-800/50 p-4 shadow-lg"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
+    <div role="status" aria-live="polite" aria-busy="true" className="space-y-6">
+      <span className="sr-only">正在載入相簿內容</span>
+
+      <div aria-hidden="true" className="space-y-6">
+        <section className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="skeleton-shimmer h-7 w-20 rounded-md" />
+            <div className="skeleton-shimmer h-6 w-12 rounded-full bg-primary-500/10 ring-1 ring-primary-500/20" />
+          </div>
+
+          {isRootLevel ? (
+            <div className="flex items-center justify-between rounded-xl bg-surface-800/40 px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="skeleton-shimmer h-12 w-12 rounded-xl" />
-                <div className="w-full space-y-2">
-                  <div className="skeleton-shimmer h-4 w-28 rounded" />
-                  <div className="skeleton-shimmer h-3 w-36 rounded opacity-70" />
-                </div>
+                <div className="skeleton-shimmer h-5 w-20 rounded-md" />
+                <div className="skeleton-shimmer h-5 w-7 rounded-full bg-surface-700/50" />
               </div>
-              <div className="flex flex-wrap gap-2">
-                <div className="skeleton-shimmer h-6 w-16 rounded-full" />
-                <div className="skeleton-shimmer h-6 w-16 rounded-full bg-red-800/20" />
-              </div>
+              <div className="skeleton-shimmer h-7 w-7 rounded-full bg-surface-700/40" />
             </div>
-          ))}
-        </div>
-      </div>
+          ) : null}
 
-      {/* 媒體區塊骨架 */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="skeleton-shimmer h-6 w-24 rounded" />
-          <div className="skeleton-shimmer h-5 w-28 rounded-full bg-primary-700/20" />
-          <div className="skeleton-shimmer ml-auto h-8 w-24 rounded-lg" />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {mediaPlaceholders.map((_, index) => (
-            <div
-              key={`media-skeleton-${index}`}
-              className="flex flex-col overflow-hidden rounded-2xl border border-surface-700/50 bg-surface-800/50 shadow-lg"
-              style={{ animationDelay: `${(index + 3) * 80}ms` }}
-            >
-              <div className="skeleton-shimmer aspect-[4/3] w-full" />
-              <div className="flex flex-col gap-3 p-4">
-                <div className="space-y-2">
-                  <div className="skeleton-shimmer h-4 w-3/4 rounded" />
-                  <div className="skeleton-shimmer h-3 w-1/2 rounded opacity-70" />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <div className="skeleton-shimmer h-6 w-16 rounded-full" />
-                  <div className="skeleton-shimmer h-6 w-16 rounded-full bg-red-800/20" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {folderPlaceholders.map((_, index) => (
+              <div
+                key={'folder-skeleton-' + index}
+                className="flex min-w-0 items-center gap-3 rounded-2xl border border-surface-700/60 bg-surface-800/40 p-4"
+              >
+                <div className="skeleton-shimmer size-11 flex-none rounded-xl bg-primary-500/10 ring-1 ring-primary-500/20" />
+                <div className="min-w-0 flex-1">
+                  <div className={'skeleton-shimmer h-5 rounded-md ' + (index % 2 === 0 ? 'w-3/5' : 'w-4/5')} />
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="skeleton-shimmer h-7 w-24 rounded-md" />
+              <div className="skeleton-shimmer h-6 w-20 rounded-full bg-primary-500/10 ring-1 ring-primary-500/20" />
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="skeleton-shimmer h-9 w-32 rounded-xl" />
+              <div className="skeleton-shimmer h-9 w-28 rounded-xl" />
+              <div className="skeleton-shimmer h-9 w-24 rounded-xl" />
+            </div>
+          </div>
 
-      {/* 分頁骨架 */}
-      <div className="flex items-center justify-center gap-2">
-        <div className="skeleton-shimmer h-8 w-8 rounded-full" />
-        <div className="skeleton-shimmer h-8 w-8 rounded-full" />
-        <div className="skeleton-shimmer h-8 w-8 rounded-full" />
-        <div className="skeleton-shimmer h-8 w-8 rounded-full" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {mediaPlaceholders.map((_, index) => (
+              <div
+                key={'media-skeleton-' + index}
+                className="overflow-hidden rounded-2xl border border-surface-700/50 bg-surface-800/50 shadow-lg"
+              >
+                <div className="relative aspect-[4/3] overflow-hidden bg-surface-900">
+                  <div className="skeleton-shimmer h-full w-full" />
+                  <div className="absolute bottom-3 right-3 rounded-lg bg-surface-900/80 px-2 py-1 ring-1 ring-surface-700">
+                    <div className="skeleton-shimmer h-3 w-8 rounded" />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 p-4">
+                  <div className={'skeleton-shimmer h-4 rounded ' + (index % 3 === 0 ? 'w-3/4' : 'w-4/5')} />
+                  <div className="skeleton-shimmer h-3 w-1/2 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
-
-      <style jsx>{`
-        .skeleton-shimmer {
-          background: linear-gradient(
-            90deg,
-            rgba(30, 41, 59, 0.8) 25%,
-            rgba(51, 65, 85, 0.6) 50%,
-            rgba(30, 41, 59, 0.8) 75%
-          );
-          background-size: 200% 100%;
-          animation: shimmer 1.5s ease-in-out infinite;
-        }
-        @keyframes shimmer {
-          0% {
-            background-position: 200% 0;
-          }
-          100% {
-            background-position: -200% 0;
-          }
-        }
-      `}</style>
     </div>
   );
 }

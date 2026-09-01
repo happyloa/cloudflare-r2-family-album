@@ -307,7 +307,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   const filterLabel = filterVisible ? (filter === 'all' ? '全部' : filter === 'image' ? '僅圖片' : '僅影片') : '全部';
 
   return (
-    <section className="relative space-y-6">
+    <section className="relative space-y-6" aria-busy={loading}>
       <MessageToast message={message} tone={messageTone} />
 
       <Toolbar
@@ -371,7 +371,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       ) : null}
 
       {loading ? (
-        <MediaSkeleton />
+        <MediaSkeleton isRootLevel={currentPrefix === ''} />
       ) : (
         <>
           {loadError ? (

@@ -100,6 +100,29 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+/* Shared skeleton palette: intentionally subtle against the album's dark surfaces. */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(18, 24, 38, 0.88) 0%,
+    rgba(28, 36, 53, 0.92) 34%,
+    rgba(51, 65, 85, 0.68) 50%,
+    rgba(28, 36, 53, 0.92) 66%,
+    rgba(18, 24, 38, 0.88) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 /* 自訂捲軸 */
 ::-webkit-scrollbar {
   width: 8px;
@@ -146,5 +169,10 @@ body {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .skeleton-shimmer {
+    animation: none !important;
+    background-position: 0 0;
   }
 }
