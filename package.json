@@ -6,6 +6,10 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260828.1": true
+  },
   "scripts": {
     "dev": "next dev",
     "dev:worker": "vinext dev --port 3001",
@@ -23,7 +27,7 @@
     "@vinext/cloudflare": "^1.0.0-beta.6",
     "aws4fetch": "^1.0.20",
     "fast-xml-parser": "^5.11.1",
-    "next": "^16.3.3",
+    "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-server-dom-webpack": "^19.2.8",
