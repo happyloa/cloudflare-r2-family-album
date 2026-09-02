@@ -1,4 +1,5 @@
 import { MAX_FOLDER_DEPTH } from "@/lib/constants";
+import type { ValidatedUploadFile } from "@/lib/upload/media-validation";
 
 import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "../path";
 
@@ -21,6 +22,16 @@ import { clearUsageCache } from "./queries";
 
 const MAX_FILE_NAME_LENGTH = 255;
 const COPY_CONCURRENCY = 4;
+
+export type UploadFailure = {
+  name: string;
+  error: string;
+};
+
+export type UploadFilesResult = {
+  media: MediaFile[];
+  failures: UploadFailure[];
+};
 
 // ── 檔名衝突處理 ──
 
@@ -212,9 +223,9 @@ function resolveUploadFileName(file: File) {
 // 靜默遺失照片；因此先比照 renameFile/moveFolder 既有的衝突改名邏輯，同步算好每個檔案最終不重複
 // 的 key，再平行上傳。
 export async function uploadFilesToR2(
-  files: File[],
+  files: ValidatedUploadFile[],
   targetPrefix = "",
-): Promise<MediaFile[]> {
+): Promise<UploadFilesResult> {
   const normalizedPrefix = normalizeStoredPrefix(targetPrefix, "target folder");
   if (getDepth(normalizedPrefix) > MAX_FOLDER_DEPTH) {
     throw new Error("資料夾層數最多兩層，請選擇較淺的路徑");
@@ -223,24 +234,24 @@ export async function uploadFilesToR2(
   const folderKey = buildFolderKey(normalizedPrefix);
   const existingNames = await listExistingFileNames(normalizedPrefix);
 
-  const prepared = files.map((file) => {
+  const prepared = files.map(({ file, contentType }) => {
     const sanitizedFileName = resolveUploadFileName(file);
     const candidateName = `${Date.now()}-${sanitizedFileName}`;
     const finalName = buildUniqueFileNameForConflict(candidateName, existingNames);
     existingNames.add(finalName);
-    return { file, key: `${folderKey}${finalName}` };
+    return { file, contentType, key: `${folderKey}${finalName}` };
   });
 
-  const uploads = await Promise.all(
-    prepared.map(async ({ file, key }) => {
+  const results = await Promise.allSettled(
+    prepared.map(async ({ file, contentType, key }) => {
       const url = buildObjectUrl(key);
       const response = await signedFetch(url, {
         method: "PUT",
         // File 是 Blob，可直接交給 fetch 串流處理，避免再複製整個檔案到 Worker 記憶體。
         body: file,
         headers: {
-          // 儲存時帶上檔案類型，讓 R2 與 CDN 能正確推斷 Content-Type
-          "Content-Type": file.type || "application/octet-stream",
+          // 只使用 server 驗證過的 MIME，不能信任 client 宣告的 File.type。
+          "Content-Type": contentType,
         },
       });
 
@@ -253,13 +264,32 @@ export async function uploadFilesToR2(
       return {
         key,
         url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
-        type: inferType(key, file.type),
+        type: inferType(key, contentType),
       } satisfies MediaFile;
     }),
   );
 
-  clearUsageCache();
-  return uploads;
+  const media: MediaFile[] = [];
+  const failures: UploadFailure[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      media.push(result.value);
+      return;
+    }
+
+    console.error("R2 upload failed", {
+      key: prepared[index].key,
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    });
+    failures.push({
+      name: prepared[index].file.name,
+      error: "儲存檔案時失敗，請重試。",
+    });
+  });
+
+  if (media.length > 0) clearUsageCache();
+  return { media, failures };
 }
 
 // 建立空資料夾 (以 0-byte object 結尾 / 實作)

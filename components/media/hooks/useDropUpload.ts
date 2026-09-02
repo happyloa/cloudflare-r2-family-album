@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { uploadFiles } from '@/lib/upload/client';
-import { MAX_FILE_COUNT, MAX_TOTAL_SIZE_MB, getSizeLimitByMime } from '@/lib/upload/constants';
+import { fetchUploadLimits, uploadFiles } from '@/lib/upload/client';
+import {
+  getSizeLimitByMime,
+  isAllowedMediaMime,
+  type UploadLimits,
+} from '@/lib/upload/constants';
 
 import { BUCKET_LIMIT_BYTES } from '../constants';
 import { MediaFile, MessageTone } from '../types';
@@ -56,45 +60,56 @@ export function useDropUpload({
         return;
       }
 
-      const selected = dropped.filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+      const selected = dropped.filter((file) => isAllowedMediaMime(file.type));
+      const unsupported = dropped.length - selected.length;
       if (selected.length === 0) {
-        pushMessage('沒有可上傳的圖片或影片檔案。', 'error');
-        return;
-      }
-      const within = selected.filter((f) => {
-        const limit = getSizeLimitByMime(f.type);
-        return typeof limit === 'number' && f.size <= limit;
-      });
-      const oversized = selected.length - within.length;
-      if (within.length === 0) {
-        pushMessage('檔案皆超過大小上限，請調整後再上傳。', 'error');
-        return;
-      }
-      if (within.length > MAX_FILE_COUNT) {
-        pushMessage(`檔案數量超過上限 ${MAX_FILE_COUNT} 個，請分批上傳。`, 'error');
-        return;
-      }
-      const totalSize = within.reduce((sum, f) => sum + f.size, 0);
-      if (totalSize > MAX_TOTAL_SIZE_MB * 1024 * 1024) {
-        pushMessage(`總容量超過 ${MAX_TOTAL_SIZE_MB}MB，請分批上傳。`, 'error');
+        pushMessage('僅接受 JPEG、PNG、WebP、GIF、AVIF、HEIC、MP4、WebM 或 MOV 檔案。', 'error');
         return;
       }
 
       uploadInFlightRef.current = true;
       try {
-        const overLimit = usageBytes !== null && usageBytes > BUCKET_LIMIT_BYTES;
+        const allowed = await requestAdminToken('請輸入管理密碼以上傳');
+        if (!allowed) return;
+
+        let limits: UploadLimits;
+        try {
+          limits = await fetchUploadLimits(adminTokenRef.current);
+        } catch {
+          pushMessage('無法取得目前上傳限制，請稍後再試。', 'error');
+          return;
+        }
+
+        const within = selected.filter((file) => {
+          const limit = getSizeLimitByMime(file.type, limits);
+          return typeof limit === 'number' && file.size <= limit;
+        });
+        const oversized = selected.length - within.length;
+        if (within.length === 0) {
+          pushMessage('檔案皆超過目前大小上限，請調整後再上傳。', 'error');
+          return;
+        }
+        if (within.length > limits.maxFileCount) {
+          pushMessage(`檔案數量超過上限 ${limits.maxFileCount} 個，請分批上傳。`, 'error');
+          return;
+        }
+
+        const totalSize = within.reduce((sum, file) => sum + file.size, 0);
+        if (totalSize > limits.maxTotalSizeMB * 1024 * 1024) {
+          pushMessage(`總容量超過 ${limits.maxTotalSizeMB}MB，請分批上傳。`, 'error');
+          return;
+        }
+
+        const overLimit = usageBytes !== null && usageBytes + totalSize > BUCKET_LIMIT_BYTES;
         if (overLimit) {
           const ok = await confirm({
-            title: '容量已超過上限',
-            message: '目前貯體容量已超過 10GB，確定仍要上傳嗎？',
+            title: '上傳後將超過容量上限',
+            message: '目前已使用容量加上這批檔案後將超過 10GB，確定仍要上傳嗎？',
             confirmLabel: '仍要上傳',
             danger: true
           });
           if (!ok) return;
         }
-
-        const allowed = await requestAdminToken('請輸入管理密碼以上傳');
-        if (!allowed) return;
 
         setDropUploading(true);
         setDropProgress(0);
@@ -110,7 +125,11 @@ export function useDropUpload({
         // 否則未來 API 支援部分成功時，使用者會看到不正確的成功提示。
         const uploadedCount = response.media.length;
         const remainingCount = Math.max(0, within.length - uploadedCount);
-        const oversizedSuffix = oversized > 0 ? `（略過 ${oversized} 個過大檔案）` : '';
+        const skippedParts = [
+          oversized > 0 ? `略過 ${oversized} 個過大檔案` : '',
+          unsupported > 0 ? `略過 ${unsupported} 個不支援檔案` : ''
+        ].filter(Boolean);
+        const skippedSuffix = skippedParts.length > 0 ? `（${skippedParts.join('；')}）` : '';
 
         // 成功回應或有明確成功子集時，都要立即重抓清單與容量。後者能讓 UI
         // 在部分失敗時仍反映已成功寫入的檔案；沒有成功結果的錯誤回應則不假設有副作用。
@@ -125,7 +144,7 @@ export function useDropUpload({
           if (uploadedCount > 0) {
             const incompleteSuffix = remainingCount > 0 ? `，另有 ${remainingCount} 個未完成` : '';
             pushMessage(
-              `已上傳 ${uploadedCount} 個檔案${incompleteSuffix}；伺服器回傳失敗狀態，已重新整理清單與容量。${oversizedSuffix}`,
+              `已上傳 ${uploadedCount} 個檔案${incompleteSuffix}；伺服器回傳失敗狀態，已重新整理清單與容量。${skippedSuffix}`,
               'error'
             );
             return;
@@ -149,14 +168,16 @@ export function useDropUpload({
         }
 
         if (remainingCount > 0) {
+          const failedNames = response.failures.slice(0, 2).map((failure) => failure.name).join('、');
+          const failedSuffix = failedNames ? `（${failedNames}${response.failures.length > 2 ? ' 等' : ''}）` : '';
           pushMessage(
-            `已上傳 ${uploadedCount} 個檔案，另有 ${remainingCount} 個未完成；已重新整理清單與容量。${oversizedSuffix}`,
+            `已上傳 ${uploadedCount} 個檔案，另有 ${remainingCount} 個未完成${failedSuffix}；已重新整理清單與容量。${skippedSuffix}`,
             'info'
           );
           return;
         }
 
-        pushMessage(`已上傳 ${uploadedCount} 個檔案${oversizedSuffix}`, 'success');
+        pushMessage(`已上傳 ${uploadedCount} 個檔案${skippedSuffix}`, 'success');
       } catch {
         pushMessage('上傳時發生錯誤，請稍後再試。', 'error');
       } finally {

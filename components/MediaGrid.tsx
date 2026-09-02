@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { UPLOAD_INPUT_ACCEPT } from '@/lib/upload/constants';
+
 import { AdminActionModal } from './media/AdminActionModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
 import { ConfirmDialog } from './media/ConfirmDialog';
@@ -326,7 +328,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       <input
         ref={uploadInputRef}
         type="file"
-        accept="image/*,video/*"
+        accept={UPLOAD_INPUT_ACCEPT}
         multiple
         className="hidden"
         onChange={(event) => {

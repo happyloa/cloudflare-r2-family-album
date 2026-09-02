@@ -1,6 +1,7 @@
 'use client';
 
 import type { MediaFile } from '@/lib/r2';
+import type { UploadLimits } from '@/lib/upload/constants';
 
 /**
  * 上傳相關的前端共用邏輯
@@ -64,8 +65,14 @@ export type UploadResult = {
   ok: boolean;
   status: number;
   media: MediaFile[];
+  failures: UploadFailure[];
   hasMediaResult: boolean;
   error?: string;
+};
+
+export type UploadFailure = {
+  name: string;
+  error: string;
 };
 
 function isMediaFile(value: unknown): value is MediaFile {
@@ -78,12 +85,47 @@ function isMediaFile(value: unknown): value is MediaFile {
   );
 }
 
+function isUploadFailure(value: unknown): value is UploadFailure {
+  if (!value || typeof value !== 'object') return false;
+  const failure = value as Record<string, unknown>;
+  return typeof failure.name === 'string' && typeof failure.error === 'string';
+}
+
+function isUploadLimits(value: unknown): value is UploadLimits {
+  if (!value || typeof value !== 'object') return false;
+  const limits = value as Record<string, unknown>;
+  return (
+    typeof limits.maxFileCount === 'number' &&
+    typeof limits.maxTotalSizeMB === 'number' &&
+    typeof limits.maxImageSizeMB === 'number' &&
+    typeof limits.maxVideoSizeMB === 'number'
+  );
+}
+
+/** 讀取目前 Worker runtime 實際套用的上傳限制，不能從 client bundle 的 process.env 推測。 */
+export async function fetchUploadLimits(adminToken: string): Promise<UploadLimits> {
+  const response = await fetch('/api/upload', {
+    headers: { 'x-admin-token': adminToken },
+    cache: 'no-store',
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  const limits = payload && typeof payload === 'object'
+    ? (payload as Record<string, unknown>).limits
+    : null;
+
+  if (!response.ok || !isUploadLimits(limits)) {
+    throw new Error('無法取得上傳限制');
+  }
+  return limits;
+}
+
 function parseUploadResult(request: XMLHttpRequest): UploadResult {
   const ok = request.status >= 200 && request.status < 300;
   const fallback: UploadResult = {
     ok,
     status: request.status,
     media: [],
+    failures: [],
     hasMediaResult: false
   };
 
@@ -95,10 +137,12 @@ function parseUploadResult(request: XMLHttpRequest): UploadResult {
 
     const body = payload as Record<string, unknown>;
     const media = body.media;
+    const failures = body.failures;
     const hasMediaResult = Array.isArray(media) && media.every(isMediaFile);
     return {
       ...fallback,
       media: hasMediaResult ? media : [],
+      failures: Array.isArray(failures) ? failures.filter(isUploadFailure) : [],
       hasMediaResult,
       error: typeof body.error === 'string' ? body.error : undefined
     };
