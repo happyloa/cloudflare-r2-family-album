@@ -20,7 +20,9 @@
     "deploy:dry-run": "vinext build && vinext-cloudflare deploy --dry-run",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv",
     "check:vinext": "vinext check",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest --config vitest.config.mts",
+    "test:run": "vitest run --config vitest.config.mts"
   },
   "dependencies": {
     "@fontsource/noto-sans-tc": "^5.3.0",
@@ -36,15 +38,19 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.54.2",
     "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitejs/plugin-rsc": "^0.5.34",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "^8.2.2",
+    "vitest": "^4.1.11",
     "wrangler": "^4.127.1"
   },
   "overrides": {
