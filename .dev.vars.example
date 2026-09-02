@@ -5,3 +5,9 @@ R2_SECRET_ACCESS_KEY=your_secret_key
 R2_BUCKET_NAME=family-album
 R2_PUBLIC_BASE=https://pub-xxxxxxxxxxxxxxxx.r2.dev
 ADMIN_ACCESS_TOKEN=your_admin_password
+
+# Optional runtime limits. The authenticated UI reads upload limits from GET /api/upload.
+# ADMIN_RATE_LIMIT_MAX_FAILURES=5
+# MAX_IMAGE_SIZE_MB=10
+# MAX_VIDEO_SIZE_MB=32
+# Fixed upload limits: at most 20 files and 32 MB total per request.
