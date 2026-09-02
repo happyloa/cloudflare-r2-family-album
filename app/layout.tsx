@@ -6,8 +6,6 @@ import '@fontsource/noto-sans-tc/chinese-traditional-600.css';
 import '@fontsource/noto-sans-tc/chinese-traditional-700.css';
 import './globals.css';
 
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-
 // 設定 Metadata，包含 SEO 與爬蟲設定
 export const metadata: Metadata = {
   title: '我們這一家',
@@ -45,9 +43,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute right-[20%] top-[40%] h-2 w-2 rounded-full bg-primary-400/20 blur-sm" />
           <div className="absolute left-[15%] top-[60%] h-1.5 w-1.5 rounded-full bg-primary-300/15 blur-sm" />
         </div>
-        {/* 主要內容區域（包含 Error Boundary 保護） */}
+        {/* 主要內容區域；未預期錯誤由 app/error.tsx 與 app/global-error.tsx 處理。 */}
         <main className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-8 lg:px-12">
-          <ErrorBoundary>{children}</ErrorBoundary>
+          {children}
         </main>
       </body>
     </html>
