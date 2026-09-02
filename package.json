@@ -22,7 +22,8 @@
     "check:vinext": "vinext check",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest --config vitest.config.mts",
-    "test:run": "vitest run --config vitest.config.mts"
+    "test:run": "vitest run --config vitest.config.mts",
+    "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build && npm run build:worker"
   },
   "dependencies": {
     "@fontsource/noto-sans-tc": "^5.3.0",
