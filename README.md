@@ -10,7 +10,7 @@
 
 ## 需求
 
-- Node.js 22.12+（CI 與 Workers Builds 使用 `.nvmrc` 的 Node 22）
+- Node.js 22 系列至少 22.22.2、24 系列至少 24.15.0，或 26+（CI 與 Workers Builds 使用 `.nvmrc` 的 Node 22.22.2）
 - Cloudflare 帳戶，以及可存取既有 R2 bucket 的 S3 API Access Key
 
 ## 本機開發
