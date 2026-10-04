@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { ConfirmRequest } from './hooks/useDialogs';
@@ -12,22 +12,15 @@ export function ConfirmDialog({
   request: ConfirmRequest | null;
   onClose: (value: boolean) => void | Promise<void>;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(Boolean(request));
-  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const [submitting, setSubmitting] = useState(false);
+  const dialogRef = useFocusTrap<HTMLDivElement>(Boolean(request), {
+    onEscape: () => { if (!submitting) void onClose(false); }
+  });
   const titleId = useId();
   const descriptionId = useId();
 
   useEffect(() => {
     setSubmitting(false);
-  }, [request]);
-
-  useEffect(() => {
-    if (!request) return;
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
   }, [request]);
 
   const handleCancel = () => {
@@ -45,23 +38,6 @@ export function ConfirmDialog({
       setSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    if (!request) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) {
-        event.preventDefault();
-        handleCancel();
-        return;
-      }
-      if (event.key === 'Enter' && document.activeElement === confirmButtonRef.current && !submitting) {
-        event.preventDefault();
-        void handleConfirm();
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [request, submitting, onClose]);
 
   if (!request) return null;
 
@@ -98,7 +74,6 @@ export function ConfirmDialog({
             {request.cancelLabel}
           </button>
           <button
-            ref={confirmButtonRef}
             type="button"
             onClick={() => void handleConfirm()}
             disabled={submitting}

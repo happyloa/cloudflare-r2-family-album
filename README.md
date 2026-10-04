@@ -2,6 +2,8 @@
 
 家庭相簿管理介面，使用 Next.js App Router、Cloudflare Workers 與既有的 Cloudflare R2 bucket。
 
+介面使用系統字型，不下載額外中文字型。直接依賴的用途與精簡結果見 [系統檢查紀錄](docs/system-review.md#程式碼精簡與套件取捨)。
+
 ## 目前存取模型
 
 - 媒體清單與 `R2_PUBLIC_BASE` 的檔案 URL 目前是公開讀取。

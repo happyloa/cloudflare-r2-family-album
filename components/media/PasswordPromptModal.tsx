@@ -17,7 +17,9 @@ export function PasswordPromptModal({
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const formRef = useFocusTrap<HTMLFormElement>(Boolean(request));
+  const formRef = useFocusTrap<HTMLFormElement>(Boolean(request), {
+    onEscape: () => { if (!submitting) onClose(false); }
+  });
   const titleId = useId();
   const descriptionId = useId();
   const inputId = useId();
@@ -28,23 +30,7 @@ export function PasswordPromptModal({
     setValue('');
     setError('');
     setSubmitting(false);
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
   }, [request]);
-
-  useEffect(() => {
-    if (!request) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) {
-        event.preventDefault();
-        onClose(false);
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [request, onClose, submitting]);
 
   if (!request) return null;
 

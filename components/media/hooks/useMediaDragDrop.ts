@@ -1,9 +1,8 @@
 import { DragEvent, useState } from 'react';
 
-import { AdminActionType } from '../AdminActionModal';
-import { MAX_FOLDER_DEPTH } from '../constants';
-import { getDepth, sanitizePath } from '../sanitize';
-import { MessageTone } from '../types';
+import { MAX_FOLDER_DEPTH } from '@/lib/constants';
+import { getDepth, sanitizePath } from '@/lib/path';
+import { MediaTarget, MessageTone } from '../types';
 
 type DragItem = { key: string; isFolder: boolean };
 
@@ -11,12 +10,7 @@ type UseMediaDragDropProps = {
   isAdmin: boolean;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
   pushMessage: (text: string, tone: MessageTone) => void;
-  handleAdminActionConfirm: (payload: {
-    action: AdminActionType;
-    key: string;
-    isFolder: boolean;
-    targetPrefix?: string;
-  }) => Promise<boolean>;
+  handleMove: (items: MediaTarget[], targetPrefix: string) => Promise<boolean>;
 };
 
 /**
@@ -28,7 +22,7 @@ export function useMediaDragDrop({
   isAdmin,
   requestAdminToken,
   pushMessage,
-  handleAdminActionConfirm
+  handleMove
 }: UseMediaDragDropProps) {
   const [draggingItem, setDraggingItem] = useState<DragItem | null>(null);
 
@@ -72,12 +66,7 @@ export function useMediaDragDrop({
     const allowed = await requestAdminToken('請輸入管理密碼以移動項目');
     if (!allowed) return;
 
-    await handleAdminActionConfirm({
-      action: 'move',
-      key: item.key,
-      isFolder: item.isFolder,
-      targetPrefix: sanitizedTarget
-    });
+    await handleMove([item], sanitizedTarget);
 
     setDraggingItem(null);
   };

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMediaName } from '@/lib/media-name';
 
-import { sanitizePath } from '../sanitize';
+import { sanitizePath } from '@/lib/path';
 import { FolderItem, MediaFile, MediaResponse, MessageTone } from '../types';
 
 type FilterOption = 'all' | 'image' | 'video';

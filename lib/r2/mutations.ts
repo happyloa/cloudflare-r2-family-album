@@ -321,6 +321,24 @@ export async function createFolder(prefix: string, name: string) {
 
 // ── 重新命名 ──
 
+// 檔案重新命名與移動共用複製、確認、刪除來源的流程。
+async function relocateFile(sourceKey: string, targetKey: string): Promise<MediaFile> {
+  if (sourceKey !== targetKey) {
+    await assertFileDestinationDoesNotConflictWithFolder(targetKey);
+    await copyObjectWithinBucket(sourceKey, targetKey);
+    const response = await signedFetch(buildObjectUrl(sourceKey), { method: "DELETE" });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Failed to delete source file: ${response.status} ${response.statusText}`);
+    }
+    clearUsageCache();
+  }
+  return {
+    key: targetKey,
+    url: encodeKeyForUrl(targetKey, getEnv().R2_PUBLIC_BASE),
+    type: inferType(targetKey),
+  };
+}
+
 // 重新命名檔案
 export async function renameFile(key: string, newName: string) {
   const normalizedKey = normalizeStoredKey(key, "file key");
@@ -338,31 +356,7 @@ export async function renameFile(key: string, newName: string) {
 
   const newKey = parent ? `${parentPrefix}/${finalName}` : finalName;
 
-  if (newKey === normalizedKey) {
-    return {
-      key: newKey,
-      url: encodeKeyForUrl(newKey, getEnv().R2_PUBLIC_BASE),
-      type: inferType(newKey),
-    } satisfies MediaFile;
-  }
-
-  await assertFileDestinationDoesNotConflictWithFolder(newKey);
-  await copyObjectWithinBucket(normalizedKey, newKey);
-
-  const deleteUrl = buildObjectUrl(normalizedKey);
-  const deleteResponse = await signedFetch(deleteUrl, { method: "DELETE" });
-  if (!deleteResponse.ok && deleteResponse.status !== 404) {
-    throw new Error(
-      `Failed to delete old file: ${deleteResponse.status} ${deleteResponse.statusText}`,
-    );
-  }
-
-  clearUsageCache();
-  return {
-    key: newKey,
-    url: encodeKeyForUrl(newKey, getEnv().R2_PUBLIC_BASE),
-    type: inferType(newKey),
-  } satisfies MediaFile;
+  return relocateFile(normalizedKey, newKey);
 }
 
 // 重新命名資料夾 (遞迴移動所有子項目)
@@ -422,31 +416,7 @@ export async function moveFile(key: string, targetPrefix: string) {
     ? `${safeTargetPrefix}/${resolvedName}`
     : resolvedName;
 
-  if (newKey === normalizedKey) {
-    return {
-      key: newKey,
-      url: encodeKeyForUrl(newKey, getEnv().R2_PUBLIC_BASE),
-      type: inferType(newKey),
-    } satisfies MediaFile;
-  }
-
-  await assertFileDestinationDoesNotConflictWithFolder(newKey);
-  await copyObjectWithinBucket(normalizedKey, newKey);
-
-  const deleteUrl = buildObjectUrl(normalizedKey);
-  const deleteResponse = await signedFetch(deleteUrl, { method: "DELETE" });
-  if (!deleteResponse.ok && deleteResponse.status !== 404) {
-    throw new Error(
-      `Failed to delete old file after move: ${deleteResponse.status} ${deleteResponse.statusText}`,
-    );
-  }
-
-  clearUsageCache();
-  return {
-    key: newKey,
-    url: encodeKeyForUrl(newKey, getEnv().R2_PUBLIC_BASE),
-    type: inferType(newKey),
-  } satisfies MediaFile;
+  return relocateFile(normalizedKey, newKey);
 }
 
 // 移動資料夾

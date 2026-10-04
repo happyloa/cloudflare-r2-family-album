@@ -3,45 +3,27 @@
 import type { FormEvent } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { getMediaName } from '@/lib/media-name';
-import { isPeriodOnlyPathSegment } from '@/lib/path';
+import { sanitizeName, isPeriodOnlyPathSegment } from '@/lib/path';
+import { MAX_FOLDER_NAME_LENGTH } from '@/lib/constants';
+import type { MediaTarget } from './types';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
 
-export type AdminActionType = 'rename' | 'move' | 'delete';
-
-export type AdminActionTarget = {
-  key: string;
-  isFolder: boolean;
-};
-
-type AdminActionModalProps = {
-  action: AdminActionType | null;
-  target: AdminActionTarget | null;
-  maxNameLength: number;
-  sanitizeName: (value: string) => string;
+type RenameModalProps = {
+  target: MediaTarget | null;
   onCancel: () => void;
-  onConfirm: (payload: {
-    action: AdminActionType;
-    key: string;
-    isFolder: boolean;
-    newName?: string;
-  }) => void | Promise<boolean>;
+  onConfirm: (newName: string) => Promise<boolean>;
 };
 
-/**
- * AdminActionModal: 重新命名對話框
- * （移動改用 MovePickerModal、刪除改用 Undo 流程，故此處只處理重新命名）
- */
-export function AdminActionModal({
-  action,
+export function RenameModal({
   target,
-  maxNameLength,
-  sanitizeName,
   onCancel,
   onConfirm
-}: AdminActionModalProps) {
-  const isRename = action === 'rename' && Boolean(target);
-  const formRef = useFocusTrap<HTMLFormElement>(isRename);
+}: RenameModalProps) {
+  const isRename = Boolean(target);
+  const formRef = useFocusTrap<HTMLFormElement>(isRename, {
+    onEscape: () => { if (!isSubmitting) onCancel(); }
+  });
 
   const currentName = useMemo(() => {
     if (!target) return '';
@@ -72,37 +54,14 @@ export function AdminActionModal({
     setIsSubmitting(false);
   }, [baseName]);
 
-  // Body scroll lock
-  useEffect(() => {
-    if (!isRename) return;
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
-  }, [isRename]);
-
-  useEffect(() => {
-    if (!isRename) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isSubmitting) {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [isRename, isSubmitting, onCancel]);
-
   const { errorMessage, helperMessage, sanitizedName } = useMemo(() => {
     if (!target) return { errorMessage: '', helperMessage: '', sanitizedName: '' };
     const sanitized = sanitizeName(inputValue.trim());
     if (!sanitized) {
       return { errorMessage: '名稱不能為空', helperMessage: '', sanitizedName: sanitized };
     }
-    if (target.isFolder && sanitized.length > maxNameLength) {
-      return { errorMessage: `資料夾名稱最多 ${maxNameLength} 個字`, helperMessage: '', sanitizedName: sanitized };
+    if (target.isFolder && sanitized.length > MAX_FOLDER_NAME_LENGTH) {
+      return { errorMessage: `資料夾名稱最多 ${MAX_FOLDER_NAME_LENGTH} 個字`, helperMessage: '', sanitizedName: sanitized };
     }
     if (isPeriodOnlyPathSegment(sanitized) || (!target.isFolder && sanitized.length + extension.length > 255)) {
       return { errorMessage: '請輸入有效的名稱，檔案名稱最多 255 個字元。', helperMessage: '', sanitizedName: sanitized };
@@ -111,7 +70,7 @@ export function AdminActionModal({
       return { errorMessage: '名稱未變更', helperMessage: '', sanitizedName: sanitized };
     }
     return { errorMessage: '', helperMessage: '套用後名稱會自動移除特殊字元', sanitizedName: sanitized };
-  }, [target, inputValue, sanitizeName, maxNameLength, baseName, extension]);
+  }, [target, inputValue, baseName, extension]);
 
   if (!isRename || !target) return null;
 
@@ -134,7 +93,7 @@ export function AdminActionModal({
     if (confirmDisabled) return;
     setIsSubmitting(true);
     try {
-      await onConfirm({ action: 'rename', key: target.key, isFolder: target.isFolder, newName: finalName });
+      await onConfirm(finalName);
     } finally {
       setIsSubmitting(false);
     }
@@ -194,7 +153,7 @@ export function AdminActionModal({
 
           <ul id={rulesId} className="space-y-1 rounded-2xl border border-surface-700/50 bg-surface-950/40 px-4 py-3 text-xs text-surface-500">
             <li>會自動移除特殊字元：&lt;&gt;:&quot;/\\|?*</li>
-            {target.isFolder ? <li>資料夾名稱最多 {maxNameLength} 個字</li> : null}
+            {target.isFolder ? <li>資料夾名稱最多 {MAX_FOLDER_NAME_LENGTH} 個字</li> : null}
           </ul>
 
           {errorMessage ? (

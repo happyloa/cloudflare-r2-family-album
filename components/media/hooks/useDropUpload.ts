@@ -7,7 +7,7 @@ import {
   type UploadLimits,
 } from '@/lib/upload/constants';
 
-import { BUCKET_LIMIT_BYTES } from '../constants';
+import { BUCKET_LIMIT_BYTES } from '@/lib/constants';
 import { MediaFile, MessageTone } from '../types';
 
 type ConfirmFn = (opts: {

@@ -1,4 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
+
+type DialogOptions = {
+  onEscape?: () => void;
+  initialFocus?: RefObject<HTMLElement | null>;
+  returnFocus?: HTMLElement | null;
+};
+
+// 多個對話框重疊時，只有最上層處理鍵盤，全部關閉後才解鎖頁面捲動。
+const dialogStack: symbol[] = [];
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, video[controls], [tabindex]:not([tabindex="-1"])';
@@ -10,24 +19,32 @@ function getFocusableElements(container: HTMLElement | null) {
   );
 }
 
-/**
- * useFocusTrap: 對話框/選單開啟時把 Tab 鍵鎖在容器內循環、自動把焦點移到第一個可互動元素，
- * 關閉時把焦點還給開啟前原本聚焦的元素。從 MediaPreviewModal 既有、驗證可用的邏輯抽出，
- * 讓所有 modal 套用同一份，不必各自重寫一遍、也不會漏掉某個 modal 忘記做 Tab 循環。
- * 各元件自己的 Escape / Enter 等按鍵語意仍留在各自元件內處理，這個 hook 只負責 focus。
- */
-export function useFocusTrap<T extends HTMLElement = HTMLElement>(active: boolean) {
+/** 共用對話框的焦點、Escape 與頁面捲動處理。 */
+export function useFocusTrap<T extends HTMLElement = HTMLElement>(active: boolean, options: DialogOptions = {}) {
   const containerRef = useRef<T>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     if (!active) return;
 
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const id = Symbol();
+    dialogStack.push(id);
+    document.body.classList.add('modal-open');
+    const previouslyFocused = optionsRef.current.returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const focusTimer = window.setTimeout(() => {
-      getFocusableElements(containerRef.current)[0]?.focus({ preventScroll: true });
+      if (dialogStack.at(-1) !== id) return;
+      const initial = optionsRef.current.initialFocus?.current ?? getFocusableElements(containerRef.current)[0];
+      initial?.focus({ preventScroll: true });
     }, 0);
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (dialogStack.at(-1) !== id) return;
+      if (event.key === 'Escape' && optionsRef.current.onEscape) {
+        event.preventDefault();
+        optionsRef.current.onEscape();
+        return;
+      }
       if (event.key !== 'Tab') return;
 
       const focusable = getFocusableElements(containerRef.current);
@@ -64,7 +81,10 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(active: boolea
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', handleKeyDown);
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      const wasTop = dialogStack.at(-1) === id;
+      dialogStack.splice(dialogStack.indexOf(id), 1);
+      if (dialogStack.length === 0) document.body.classList.remove('modal-open');
+      if (wasTop && previouslyFocused?.isConnected) {
         previouslyFocused.focus({ preventScroll: true });
       }
     };

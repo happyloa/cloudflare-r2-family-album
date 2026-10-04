@@ -1,6 +1,6 @@
 'use client';
 
-import { BUCKET_LIMIT_BYTES } from './constants';
+import { BUCKET_LIMIT_BYTES } from '@/lib/constants';
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return '0B';

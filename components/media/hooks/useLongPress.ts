@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 /**
  * useLongPress Hook: 觸控長按偵測（用於手機進入多選模式）
@@ -12,9 +12,11 @@ export function useLongPress(onLongPress: (id: string) => void, delay = 450) {
 
   const start = useCallback(
     (id: string) => {
+      if (timer.current) window.clearTimeout(timer.current);
       firedRef.current = false;
       timer.current = window.setTimeout(() => {
         firedRef.current = true;
+        timer.current = null;
         if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
           navigator.vibrate(10);
         }
@@ -30,6 +32,8 @@ export function useLongPress(onLongPress: (id: string) => void, delay = 450) {
       timer.current = null;
     }
   }, []);
+
+  useEffect(() => cancel, [cancel]);
 
   const consumeClick = useCallback(() => {
     if (firedRef.current) {

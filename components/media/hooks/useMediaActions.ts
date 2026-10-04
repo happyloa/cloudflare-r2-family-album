@@ -1,18 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { MAX_BATCH_ITEMS } from '@/lib/constants';
+import { useState } from "react";
+import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from '@/lib/constants';
 
-import { AdminActionTarget, AdminActionType } from "../AdminActionModal";
-import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "../constants";
-import { getDepth, sanitizeName } from "../sanitize";
-import { FolderItem, MediaFile, MessageTone } from "../types";
+import { getDepth, sanitizeName } from '@/lib/path';
+import { FolderItem, MediaFile, MediaTarget, MessageTone } from "../types";
 
-type BatchItem = { key: string; isFolder: boolean };
-
-type ConfirmedRename = {
-  key: string;
-  name: string;
-  url?: string;
-};
+type BatchItem = MediaTarget;
 
 type UseMediaActionsProps = {
   authorizedFetch: (
@@ -27,9 +19,6 @@ type UseMediaActionsProps = {
   currentPrefix: string;
   refreshUsage: (force?: boolean) => void | Promise<void>;
 };
-
-// 操作後再載入清單，校正樂觀更新並取得最新物件資訊。
-const RECONCILE_DELAY_MS = 1500;
 
 // 依 HTTP 狀態碼給出更明確的失敗訊息；401 通常代表管理 session 已逾時。
 async function describeActionFailure(response: Response, fallback: string) {
@@ -54,7 +43,7 @@ function isAlreadyInTargetParent(item: BatchItem, targetPrefix: string) {
   return getParentPrefix(item.key) === normalizePrefix(targetPrefix);
 }
 
-function readConfirmedRename(data: unknown, isFolder: boolean): ConfirmedRename | null {
+function readConfirmedRename(data: unknown, isFolder: boolean): string | null {
   if (!data || typeof data !== "object") return null;
   const body = data as Record<string, unknown>;
 
@@ -63,7 +52,7 @@ function readConfirmedRename(data: unknown, isFolder: boolean): ConfirmedRename 
     if (!folder || typeof folder !== "object") return null;
     const value = folder as Record<string, unknown>;
     if (typeof value.key !== "string" || typeof value.name !== "string") return null;
-    return { key: value.key, name: value.name };
+    return value.name;
   }
 
   const media = body.media;
@@ -77,11 +66,7 @@ function readConfirmedRename(data: unknown, isFolder: boolean): ConfirmedRename 
     return null;
   }
 
-  return {
-    key: value.key,
-    name: value.key.split("/").pop() ?? value.key,
-    url: value.url,
-  };
+  return value.key.split("/").pop() ?? value.key;
 }
 
 /**
@@ -98,23 +83,8 @@ export function useMediaActions({
   currentPrefix,
   refreshUsage,
 }: UseMediaActionsProps) {
-  const [adminAction, setAdminAction] = useState<{
-    action: AdminActionType;
-    target: AdminActionTarget;
-  } | null>(null);
-
-  const timersRef = useRef(new Set<number>());
-  useEffect(() => () => {
-    timersRef.current.forEach(timer => window.clearTimeout(timer));
-  }, []);
-
-  const scheduleReconcile = (prefix = currentPrefix) => {
-    const timer = window.setTimeout(() => {
-      timersRef.current.delete(timer);
-      void loadMedia(prefix, { silent: true });
-    }, RECONCILE_DELAY_MS);
-    timersRef.current.add(timer);
-  };
+  const [renameTarget, setRenameTarget] = useState<MediaTarget | null>(null);
+  const refreshListing = () => void loadMedia(currentPrefix, { silent: true });
 
   // 建立新資料夾（回傳是否成功，供對話框決定是否關閉）
   const handleCreateFolder = async (name: string): Promise<boolean> => {
@@ -168,126 +138,43 @@ export function useMediaActions({
     }
   };
 
-  // 開啟管理操作確認視窗 (Rename/Move/Delete)
-  const openAdminActionModal = async (
-    action: AdminActionType,
-    key: string,
-    isFolder: boolean,
-  ) => {
-    const promptMap: Record<AdminActionType, string> = {
-      rename: "請輸入管理密碼以重新命名",
-      move: "請輸入管理密碼以移動項目",
-      delete: "請輸入管理密碼以刪除項目",
-    };
-    const allowed = await requestAdminToken(promptMap[action]);
-    if (!allowed) return;
-
-    setAdminAction({ action, target: { key, isFolder } });
+  const openRename = async (target: MediaTarget) => {
+    if (await requestAdminToken("請輸入管理密碼以重新命名")) setRenameTarget(target);
   };
 
-  // 確認執行管理操作
-  const handleAdminActionConfirm = async (payload: {
-    action: AdminActionType;
-    key: string;
-    isFolder: boolean;
-    newName?: string;
-    targetPrefix?: string;
-  }): Promise<boolean> => {
-    // 重新命名
-    if (payload.action === "rename") {
-      if (!payload.newName) return false;
-      try {
-        const response = await authorizedFetch("/api/media", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "rename",
-            key: payload.key,
-            newName: payload.newName,
-            isFolder: payload.isFolder,
-          }),
-        });
-
-        if (!response.ok) {
-          pushMessage(await describeActionFailure(response, "重新命名失敗，請稍後再試"), "error");
-          await loadMedia(currentPrefix, { silent: true });
-          return false;
-        }
-
-        // 重新命名會同時改變檔案 key 與公開 URL。維持對話框的 submitting 狀態，
-        // 直到用伺服器確認後的清單完整取代本地資料，避免使用者立即預覽/開啟時
-        // 仍拿到舊 key 或舊 URL。
-        const confirmedRename = readConfirmedRename(
-          await response.json().catch(() => null),
-          payload.isFolder,
-        );
+  const handleRename = async (newName: string): Promise<boolean> => {
+    if (!renameTarget || !newName) return false;
+    try {
+      const response = await authorizedFetch("/api/media", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rename", ...renameTarget, newName }),
+      });
+      if (!response.ok) {
+        pushMessage(await describeActionFailure(response, "重新命名失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
-        setAdminAction(null);
-
-        if (!confirmedRename) {
-          pushMessage("重新命名完成，但伺服器回傳資料不完整；已重新整理清單。", "info");
-          scheduleReconcile();
-          return true;
-        }
-
-        const adjustedName = confirmedRename.name !== payload.newName;
-        pushMessage(
-          adjustedName ? `已更新名稱為「${confirmedRename.name}」` : "已更新名稱",
-          "success",
-        );
-        scheduleReconcile();
-        return true;
-      } catch {
-        pushMessage("重新命名時發生錯誤，請稍後再試。", "error");
-        await loadMedia(currentPrefix, { silent: true });
+        return false;
       }
+
+      const confirmedRename = readConfirmedRename(await response.json().catch(() => null), renameTarget.isFolder);
+      // 更新 key 與 URL 後才關閉對話框，避免立即預覽時仍拿到舊網址。
+      await loadMedia(currentPrefix, { silent: true });
+      setRenameTarget(null);
+      if (!confirmedRename) {
+        pushMessage("重新命名完成，但伺服器回傳資料不完整；已重新整理清單。", "info");
+      } else {
+        pushMessage(confirmedRename !== newName ? `已更新名稱為「${confirmedRename}」` : "已更新名稱", "success");
+      }
+      return true;
+    } catch {
+      pushMessage("重新命名時發生錯誤，請稍後再試。", "error");
+      await loadMedia(currentPrefix, { silent: true });
       return false;
     }
-
-    // 移動（項目離開目前資料夾，樂觀移除）
-    if (payload.action === "move") {
-      if (payload.targetPrefix === undefined) return false;
-      const targetPrefix = normalizePrefix(payload.targetPrefix);
-      if (isAlreadyInTargetParent({ key: payload.key, isFolder: payload.isFolder }, targetPrefix)) {
-        setAdminAction(null);
-        pushMessage(payload.isFolder ? "資料夾已在目標位置，未移動。" : "媒體已在目標資料夾，未移動。", "info");
-        return true;
-      }
-
-      removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
-      setAdminAction(null);
-      try {
-        const response = await authorizedFetch("/api/media", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "move",
-            key: payload.key,
-            targetPrefix,
-            isFolder: payload.isFolder,
-          }),
-        });
-
-        if (!response.ok) {
-          pushMessage(await describeActionFailure(response, "移動失敗，請稍後再試"), "error");
-          await loadMedia(currentPrefix, { silent: true });
-          return false;
-        }
-
-        pushMessage("已移動完成", "success");
-        scheduleReconcile();
-        return true;
-      } catch {
-        pushMessage("移動時發生錯誤，請稍後再試。", "error");
-        await loadMedia(currentPrefix, { silent: true });
-      }
-    }
-    // 刪除已改走 MediaGrid 的 Undo 流程（commitDeleteOnServer），此處不再處理
-    return false;
   };
 
-  // 批次移動
-  const handleBatchMove = async (items: BatchItem[], targetPrefix: string): Promise<boolean> => {
+  // 單筆、批次與拖曳共用同一個移動流程。
+  const handleMove = async (items: BatchItem[], targetPrefix: string): Promise<boolean> => {
     if (items.length === 0) return false;
     if (items.length > MAX_BATCH_ITEMS) {
       pushMessage(`每批最多移動 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
@@ -327,7 +214,7 @@ export function useMediaActions({
           : `已移動 ${movableItems.length} 個項目`,
         skippedCount > 0 ? "info" : "success",
       );
-      scheduleReconcile();
+      refreshListing();
       return true;
     } catch {
       pushMessage("批次移動時發生錯誤，請稍後再試。", "error");
@@ -351,7 +238,7 @@ export function useMediaActions({
         return;
       }
       void refreshUsage(true);
-      scheduleReconcile();
+      refreshListing();
     } catch {
       pushMessage("刪除時發生錯誤，請稍後再試。", "error");
       await loadMedia(currentPrefix, { silent: true });
@@ -360,11 +247,11 @@ export function useMediaActions({
 
   return {
     handleCreateFolder,
-    adminAction,
-    setAdminAction,
-    openAdminActionModal,
-    handleAdminActionConfirm,
-    handleBatchMove,
+    renameTarget,
+    setRenameTarget,
+    openRename,
+    handleRename,
+    handleMove,
     commitDeleteOnServer,
   };
 }

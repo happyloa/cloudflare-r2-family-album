@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { getMediaName } from '@/lib/media-name';
 
 import { MediaFile } from './types';
+import { useFocusTrap } from './hooks/useFocusTrap';
 
 function NavArrow({
   direction,
@@ -49,7 +50,6 @@ export function MediaPreviewModal({
   onNavigate?: (file: MediaFile) => void;
   triggerElement?: HTMLElement | null;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -57,6 +57,11 @@ export function MediaPreviewModal({
   const [loadedUrl, setLoadedUrl] = useState('');
   const [failedUrl, setFailedUrl] = useState('');
   const open = media !== null;
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, {
+    onEscape: onClose,
+    initialFocus: closeButtonRef,
+    returnFocus: triggerElement
+  });
   const hasFailed = media?.url === failedUrl;
   const isLoaded = media ? loadedUrl === media.url : false;
   const markLoaded = () => {
@@ -91,101 +96,22 @@ export function MediaPreviewModal({
   const goNext = useCallback(() => {
     if (hasNext) goTo(currentIndex + 1);
   }, [hasNext, currentIndex, goTo]);
-  const handlersRef = useRef({ onClose, goPrev, goNext });
-  handlersRef.current = { onClose, goPrev, goNext };
-
-  // Body scroll lock
-  useEffect(() => {
-    if (!media) return;
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
-  }, [open]);
+  const handlersRef = useRef({ goPrev, goNext });
+  handlersRef.current = { goPrev, goNext };
 
   useEffect(() => {
-    if (!media) return;
-
-    const previouslyFocused = triggerElement ?? (document.activeElement as HTMLElement | null);
-    closeButtonRef.current?.focus({ preventScroll: true });
-
+    if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (!dialogRef.current?.contains(event.target as Node) || event.target instanceof HTMLVideoElement) return;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
-        handlersRef.current.onClose();
-        return;
-      }
-
-      // Native video controls use the arrow keys for seeking. Events from the
-      // controls are retargeted to the video element, so leave those intact.
-      if (
-        event.target instanceof HTMLVideoElement &&
-        (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-      ) {
-        return;
-      }
-
-      // Arrow key navigation
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        handlersRef.current.goPrev();
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        handlersRef.current.goNext();
-        return;
-      }
-
-      if (event.key !== 'Tab') return;
-
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const focusableElements = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, video[controls], [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
-
-      if (focusableElements.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const first = focusableElements[0];
-      const last = focusableElements[focusableElements.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-
-      if (!active || !dialog.contains(active)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-        return;
-      }
-
-      if (event.shiftKey) {
-        if (active === first) {
-          event.preventDefault();
-          last.focus();
-        }
-        return;
-      }
-
-      if (active === last) {
-        event.preventDefault();
-        first.focus();
+        if (event.key === 'ArrowLeft') handlersRef.current.goPrev();
+        else handlersRef.current.goNext();
       }
     };
-
     document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-        previouslyFocused.focus({ preventScroll: true });
-      }
-    };
-  }, [open, triggerElement]);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, dialogRef]);
 
   if (!media) return null;
 

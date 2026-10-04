@@ -18,7 +18,7 @@
 | 搜尋與分頁 | 搜尋控制移到資料夾上方，搜尋時展開符合條件的年份群組；搜尋／類型篩選會補載目前資料夾的剩餘分頁。失敗會停止自動重試，重複 cursor 會顯示錯誤。排序提示明確說明尚未載入的項目。 |
 | 桌面與手機 | 觸控裝置可直接多選，修復操作選單被延遲的捲動事件關閉。預覽焦點不再隨切換重設，保留影片控制的方向鍵功能，對話框支援窄螢幕與橫向捲動。超長標題顯示兩行，頁碼保持同一行。 |
 | 預覽與空畫面 | 圖片／影片失敗提供提示與重試入口；影片縮圖增加播放提示。空相簿說明符合公開瀏覽與管理模式的實際操作。 |
-| 首頁字型 | 改用字型的 Unicode 子集；同一組隔離首頁資料中，桌面與手機的字型下載各從 4,044,108 bytes 降為 847,304 bytes，約減少 79%。這是本機資源下載量測量，尚無正式網站 Core Web Vitals 結果。 |
+| 首頁字型 | 移除 `@fontsource/noto-sans-tc`，使用裝置既有的繁中字型與系統字型。桌面與手機的隔離首頁測試均確認沒有額外字型請求；先前的子集版本仍需下載 847,304 bytes。字型呈現會隨作業系統略有差異，尚無正式網站 Core Web Vitals 結果。 |
 
 ## 功能驗證
 
@@ -36,9 +36,35 @@
 
 - `npm ci`：乾淨安裝成功，沒有 npm 安裝警告。
 - `npm audit`：0 個漏洞；`npm outdated`：所有直接依賴皆無較新版本，包含新增的 Playwright 與 jsdom 30.1.2。
-- `npm run verify`：Vinext 相容性、TypeScript、14 個測試檔的 43 項回歸測試、Next.js 正式建置與 Workers 正式建置通過。
-- Next.js 與建置後的 Workers 各通過 17 項瀏覽器測試；各略過 1 項僅供桌面的拖曳測試，手機移動由觸控多選與移動視窗驗證。
+- `npm run verify`：Vinext 相容性、TypeScript、15 個測試檔的 44 項回歸測試、Next.js 正式建置與 Workers 正式建置通過。
+- Next.js 與建置後的 Workers 各通過 19 項瀏覽器測試；各略過 1 項僅供桌面的拖曳測試，手機移動由觸控多選與移動視窗驗證。
 - 建置後的 Worker 以 Wrangler 部署 dry-run 通過。GitHub Verify 工作流程已加入兩種 runtime 的瀏覽器測試，本次紀錄不代表遠端 CI 已執行。
+
+## 程式碼精簡與套件取捨
+
+同日另檢查了功能程式碼與依賴用途，完成以下精簡：
+
+- 單筆、批次與拖曳移動共用一個前端處理流程，重新命名的狀態與對話框只保留實際需要的欄位。
+- 共用對話框的焦點、Escape 與捲動鎖定，避免多個對話框各自處理；重疊時只由最上層接收鍵盤操作。
+- 合併移動目的地的首批與分頁載入，保留取消過期請求，補上逾時、重複 cursor 與失敗重試。分頁失敗時保留已載入的目的地。
+- 移除操作後固定延遲 1.5 秒的刷新，成功後直接刷新；重新命名不再重複刷新。S3 清單查詢的強一致性見 [Cloudflare R2 文件](https://developers.cloudflare.com/r2/reference/consistency/)，公開媒體網域的快取仍需另外考慮。
+- 檔案重新命名與移動共用複製／刪除來源的程式碼，保留既有衝突處理、結果確認與錯誤保護。
+- 刪除只轉送匯出的 `sanitize.ts`，直接引用共用路徑函式；清理不必要的型別、傳入參數與分支。
+
+功能程式碼（`app`、`components`、`lib`）淨減少 424 行，刪除一個轉送匯出的檔案。直接依賴由 27 個減為 26 個，其中 18 個是開發工具。剩餘依賴的用途如下：
+
+| 用途 | 套件與保留原因 |
+| --- | --- |
+| 框架與渲染 | `next`、`react`、`react-dom`、`react-server-dom-webpack`、`vinext`：目前的 App Router、Next.js 開發流程與 Workers 的 RSC 建置需要。 |
+| R2 | `aws4fetch`、`fast-xml-parser`：S3 請求簽章與 XML 回應解析。 |
+| 部署 | `@vinext/cloudflare`、`wrangler`、`@cloudflare/vite-plugin`：既有 Workers 建置與部署整合。 |
+| Vite | `vite`、`@vitejs/plugin-react`、`@vitejs/plugin-rsc`：框架的 peer dependencies；App Router 實際使用 RSC，測試也使用 React 轉換。 |
+| 樣式 | `tailwindcss`、`@tailwindcss/postcss`、`postcss`：現有樣式建置；直接宣告 `postcss` 同時作為安全版本覆寫的來源。 |
+| 型別 | `typescript`、`@types/node`、`@types/react`、`@types/react-dom`：嚴格型別檢查。 |
+| 測試 | `vitest`、`jsdom`、`@testing-library/react`、`@testing-library/dom`、`@playwright/test`：API、資料保護、DOM 與瀏覽器回歸；DOM 套件也是 React Testing Library 的 peer dependency。 |
+| 安全修補 | 本機 `fast-glob` 相容層：讓 Vinext 的間接依賴使用既有 `tinyglobby`，避開尚未修補的 `braces`，保留建置相容性。 |
+
+沒有加入新的正式執行套件或 UI 套件。回歸測試仍保留，並補上共用對話框與目的地分頁重試的驗證。後續若只保留 Workers 單一開發流程，可再評估減少 Next.js 的獨立建置；目前保留兩種 runtime 的既有指令。
 
 ## 保留的限制與後續建議
 

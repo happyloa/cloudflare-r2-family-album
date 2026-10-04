@@ -2,10 +2,9 @@
 
 import { FormEvent, useEffect, useId, useState } from 'react';
 
-import { MAX_FOLDER_NAME_LENGTH } from './constants';
+import { MAX_FOLDER_NAME_LENGTH } from '@/lib/constants';
 import { useFocusTrap } from './hooks/useFocusTrap';
-import { sanitizeName } from './sanitize';
-import { isPeriodOnlyPathSegment } from '@/lib/path';
+import { sanitizeName, isPeriodOnlyPathSegment } from '@/lib/path';
 
 export function NewFolderModal({
   open,
@@ -18,7 +17,9 @@ export function NewFolderModal({
 }) {
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const formRef = useFocusTrap<HTMLFormElement>(open);
+  const formRef = useFocusTrap<HTMLFormElement>(open, {
+    onEscape: () => { if (!submitting) onCancel(); }
+  });
   const titleId = useId();
   const descriptionId = useId();
   const inputId = useId();
@@ -28,25 +29,7 @@ export function NewFolderModal({
     if (!open) return;
     setValue('');
     setSubmitting(false);
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [open, onCancel, submitting]);
 
   if (!open) return null;
 

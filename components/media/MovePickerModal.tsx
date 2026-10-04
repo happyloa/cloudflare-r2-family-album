@@ -3,15 +3,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
-import { getDepth } from './sanitize';
+import { getDepth } from '@/lib/path';
 import { FolderItem, MediaResponse } from './types';
 
 
 const FOLDER_PAGE_SIZE = 100;
-
-type PaginatedMediaResponse = MediaResponse & {
-  nextCursor?: string | null;
-};
 
 function mergeFolders(current: FolderItem[], incoming: FolderItem[]) {
   const foldersByKey = new Map(current.map((folder) => [folder.key, folder]));
@@ -52,9 +48,10 @@ export function MovePickerModal({
   const requestControllerRef = useRef<AbortController | null>(null);
   const loadedPrefixRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
-  const mountedRef = useRef(true);
   const resettingPrefixRef = useRef(false);
-  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+  const dialogRef = useFocusTrap<HTMLDivElement>(open, {
+    onEscape: () => { if (!submitting) onCancel(); }
+  });
   const titleId = useId();
   const descriptionId = useId();
 
@@ -64,125 +61,46 @@ export function MovePickerModal({
     [items]
   );
 
-  const loadFirstPage = useCallback(async (prefix: string) => {
-    const requestVersion = requestVersionRef.current + 1;
-    requestVersionRef.current = requestVersion;
+  const loadFolders = useCallback(async (prefix: string, cursor?: string) => {
+    const append = Boolean(cursor);
+    if (append && (loadingMoreRef.current || loadedPrefixRef.current !== prefix)) return;
+    const version = ++requestVersionRef.current;
     requestControllerRef.current?.abort();
-
     const controller = new AbortController();
     requestControllerRef.current = controller;
     loadedPrefixRef.current = prefix;
-    loadingMoreRef.current = false;
-
-    if (mountedRef.current) {
+    loadingMoreRef.current = append;
+    setLoadError(null);
+    setLoadingMore(append);
+    if (!append) {
       setLoading(true);
-      setLoadError(null);
-      setLoadingMore(false);
       setFolders([]);
       setNextCursor(null);
     }
 
-    const params = new URLSearchParams({
-      prefix,
-      limit: String(FOLDER_PAGE_SIZE),
-    });
-
+    const params = new URLSearchParams({ prefix, limit: String(FOLDER_PAGE_SIZE) });
+    if (cursor) params.set('cursor', cursor);
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(`/api/media?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load folders: ${response.status}`);
-      }
-
-      const data = (await response.json()) as PaginatedMediaResponse;
-      if (!mountedRef.current || requestVersion !== requestVersionRef.current) {
-        return;
-      }
-
-      setFolders(mergeFolders([], data.folders ?? []));
+      const response = await fetch(`/api/media?${params}`, { signal: controller.signal });
+      if (!response.ok) throw new Error('Failed to load destination folders');
+      const data = await response.json() as MediaResponse;
+      if (version !== requestVersionRef.current) return;
+      if (cursor && data.nextCursor === cursor) throw new Error('Repeated destination cursor');
+      setFolders(current => mergeFolders(append ? current : [], data.folders ?? []));
       setNextCursor(data.nextCursor ?? null);
-    } catch (error) {
-      if (
-        !mountedRef.current ||
-        requestVersion !== requestVersionRef.current ||
-        (error as { name?: string }).name === 'AbortError'
-      ) {
-        return;
-      }
-
-      setFolders([]);
-      setNextCursor(null);
-      setLoadError('無法載入目的地資料夾，請檢查連線後再試一次。');
+    } catch {
+      if (version === requestVersionRef.current) setLoadError('無法載入目的地資料夾，請檢查連線後再試一次。');
     } finally {
-      if (!mountedRef.current || requestVersion !== requestVersionRef.current) {
-        return;
-      }
-
-      if (requestControllerRef.current === controller) {
+      window.clearTimeout(timeout);
+      if (version === requestVersionRef.current) {
         requestControllerRef.current = null;
+        loadingMoreRef.current = false;
+        setLoading(false);
+        setLoadingMore(false);
       }
-      setLoading(false);
     }
   }, []);
-
-  const loadMore = useCallback(async () => {
-    const cursor = nextCursor;
-    if (
-      !cursor ||
-      loadingMoreRef.current ||
-      loadedPrefixRef.current !== browsePrefix
-    ) {
-      return;
-    }
-
-    const requestVersion = requestVersionRef.current;
-    const controller = new AbortController();
-    requestControllerRef.current = controller;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-
-    const params = new URLSearchParams({
-      prefix: browsePrefix,
-      limit: String(FOLDER_PAGE_SIZE),
-      cursor,
-    });
-
-    try {
-      const response = await fetch(`/api/media?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load more folders: ${response.status}`);
-      }
-
-      const data = (await response.json()) as PaginatedMediaResponse;
-      if (!mountedRef.current || requestVersion !== requestVersionRef.current) {
-        return;
-      }
-
-      setFolders((current) => mergeFolders(current, data.folders ?? []));
-      setNextCursor(data.nextCursor ?? null);
-    } catch (error) {
-      if (
-        !mountedRef.current ||
-        requestVersion !== requestVersionRef.current ||
-        (error as { name?: string }).name === 'AbortError'
-      ) {
-        return;
-      }
-    } finally {
-      if (!mountedRef.current || requestVersion !== requestVersionRef.current) {
-        return;
-      }
-
-      if (requestControllerRef.current === controller) {
-        requestControllerRef.current = null;
-      }
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
-    }
-  }, [browsePrefix, nextCursor]);
 
   const browseTo = useCallback((prefix: string) => {
     if (prefix === browsePrefix) return;
@@ -197,9 +115,7 @@ export function MovePickerModal({
 
 
   useEffect(() => {
-    mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
       requestVersionRef.current += 1;
       requestControllerRef.current?.abort();
     };
@@ -219,25 +135,7 @@ export function MovePickerModal({
     resettingPrefixRef.current = true;
     setBrowsePrefix(startPrefix);
     setSubmitting(false);
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
   }, [open, startPrefix]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [open, onCancel, submitting]);
 
   useEffect(() => {
     if (!open) return;
@@ -247,8 +145,8 @@ export function MovePickerModal({
       resettingPrefixRef.current = false;
     }
 
-    void loadFirstPage(browsePrefix);
-  }, [browsePrefix, loadFirstPage, open, startPrefix]);
+    void loadFolders(browsePrefix);
+  }, [browsePrefix, loadFolders, open, startPrefix]);
 
   const trail = useMemo(() => {
     const parts = browsePrefix.split('/').filter(Boolean);
@@ -266,7 +164,7 @@ export function MovePickerModal({
   const browseDepth = getDepth(browsePrefix);
   const targetTooDeep = movingFolder ? browseDepth + 1 > maxDepth : browseDepth > maxDepth;
   const targetIsSource = isSourceOrDescendant(browsePrefix);
-  const confirmDisabled = submitting || loading || Boolean(loadError) || targetTooDeep || targetIsSource;
+  const confirmDisabled = submitting || loading || (Boolean(loadError) && !nextCursor) || targetTooDeep || targetIsSource;
   const canEnter = (folderKey: string) => !isSourceOrDescendant(folderKey) && getDepth(folderKey) <= (movingFolder ? maxDepth - 1 : maxDepth);
 
   const handleConfirm = async () => {
@@ -339,14 +237,14 @@ export function MovePickerModal({
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" />
               <span className="sr-only">正在載入資料夾</span>
             </div>
-          ) : loadError ? (
+          ) : loadError && !nextCursor ? (
             <div className="flex min-h-[120px] flex-col items-center justify-center gap-3 px-4 text-center">
               <p role="alert" className="text-sm text-red-200">
                 {loadError}
               </p>
               <button
                 type="button"
-                onClick={() => void loadFirstPage(browsePrefix)}
+                onClick={() => void loadFolders(browsePrefix)}
                 disabled={submitting}
                 className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -385,16 +283,17 @@ export function MovePickerModal({
               )}
               {nextCursor ? (
                 <div className="px-1 pb-1 pt-2">
+                  {loadError ? <p role="alert" className="pb-2 text-sm text-red-200">{loadError}</p> : null}
                   <button
                     type="button"
-                    onClick={() => void loadMore()}
+                    onClick={() => void loadFolders(browsePrefix, nextCursor)}
                     disabled={loadingMore || submitting}
                     className="flex w-full items-center justify-center gap-2 rounded-lg border border-surface-700/70 px-3 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-wait disabled:opacity-60"
                   >
                     {loadingMore ? (
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden />
                     ) : null}
-                    <span>{loadingMore ? '\u8F09\u5165\u4E2D\u2026' : '\u8F09\u5165\u66F4\u591A'}</span>
+                    <span>{loadingMore ? '載入中…' : loadError ? '再試一次' : '載入更多'}</span>
                   </button>
                 </div>
               ) : null}

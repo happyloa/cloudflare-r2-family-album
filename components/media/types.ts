@@ -4,3 +4,4 @@
 export type { MediaFile, FolderItem, MediaListing as MediaResponse } from '@/lib/r2';
 
 export type MessageTone = 'info' | 'success' | 'error';
+export type MediaTarget = { key: string; isFolder: boolean };

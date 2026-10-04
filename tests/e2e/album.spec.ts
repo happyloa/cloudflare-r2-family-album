@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 const password = 'album-isolated-test-password';
 const photo = (key: string, size = 100) => ({ key, size, url: `/test-media/${encodeURIComponent(key)}`, type: key.endsWith('.mp4') ? 'video' : 'image', lastModified: '2026-10-01T00:00:00Z' });
@@ -102,8 +102,8 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.evaluate(() => document.fonts.ready);
-  const fontBytes = await page.evaluate(() => performance.getEntriesByType('resource').filter(item => /\.woff2?/.test(item.name)).reduce((sum, item) => sum + (item as PerformanceResourceTiming).decodedBodySize, 0));
-  writeFileSync(`.cache/${testInfo.project.name}-font-bytes.json`, JSON.stringify({ fontBytes }));
+  const fontRequests = await page.evaluate(() => performance.getEntriesByType('resource').filter(item => /\.woff2?/.test(item.name)));
+  expect(fontRequests).toHaveLength(0);
   await page.screenshot({ path: `.cache/${testInfo.project.name}-album.png`, fullPage: true });
 });
 
@@ -161,6 +161,29 @@ test('empty state and recovery from a listing error', async ({ page }) => {
   failListing = false;
   await page.getByRole('button', { name: '再試一次', exact: true }).click();
   await expect(page.getByText('目前沒有媒體或資料夾', { exact: true })).toBeVisible();
+});
+
+test('destination pagination retries without discarding loaded folders', async ({ page }) => {
+  const state = await fixture(page); await page.goto('/'); await login(page);
+  for (let index = 0; index < 110; index++) state.folders.add(`目標${index}`);
+  let failed = false;
+  await page.route('**/api/media?*', route => {
+    const url = new URL(route.request().url());
+    if (!failed && url.searchParams.get('limit') === '100' && url.searchParams.has('cursor')) {
+      failed = true;
+      return route.fulfill({ status: 500, json: { error: '隔離分頁錯誤' } });
+    }
+    return route.fallback();
+  });
+  await more(page, 'photo.jpg'); await page.getByRole('menuitem', { name: /移動$/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '載入更多', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '2025旅行，進入資料夾', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '再試一次', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: '目標109，進入資料夾', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
 });
 
 test('long filenames and dialogs fit narrow and landscape viewports', async ({ page }, testInfo) => {

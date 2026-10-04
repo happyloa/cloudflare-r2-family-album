@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { UPLOAD_INPUT_ACCEPT } from '@/lib/upload/constants';
 
-import { AdminActionModal } from './media/AdminActionModal';
+import { RenameModal } from './media/RenameModal';
 import { BreadcrumbNav } from './media/BreadcrumbNav';
 import { ConfirmDialog } from './media/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from './media/ContextMenu';
-import { MAX_ADMIN_TOKEN_LENGTH, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from './media/constants';
+import { MAX_ADMIN_TOKEN_LENGTH } from './media/constants';
+import { MAX_FOLDER_DEPTH } from '@/lib/constants';
 import { DropzoneOverlay } from './media/DropzoneOverlay';
 import { EmptyState } from './media/EmptyState';
 import { FolderGrid } from './media/FolderGrid';
@@ -34,7 +35,7 @@ import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
 import { Toolbar } from './media/Toolbar';
 import { UndoToast } from './media/UndoToast';
-import { getDepth, sanitizeName } from './media/sanitize';
+import { getDepth } from '@/lib/path';
 import { MediaFile } from './media/types';
 
 type Breadcrumb = { label: string; key: string };
@@ -89,11 +90,11 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
 
   const {
     handleCreateFolder,
-    adminAction,
-    setAdminAction,
-    openAdminActionModal,
-    handleAdminActionConfirm,
-    handleBatchMove,
+    renameTarget,
+    setRenameTarget,
+    openRename,
+    handleRename,
+    handleMove,
     commitDeleteOnServer
   } = useMediaActions({
     authorizedFetch,
@@ -110,7 +111,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     isAdmin,
     requestAdminToken,
     pushMessage,
-    handleAdminActionConfirm
+    handleMove
   });
 
   // 選取項目順序：資料夾在前、檔案在後（供範圍選取）。
@@ -218,19 +219,10 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       return;
     }
 
-    let succeeded = false;
-    if (items.length === 1) {
-      succeeded = await handleAdminActionConfirm({
-        action: 'move',
-        key: items[0].key,
-        isFolder: items[0].isFolder,
-        targetPrefix
-      });
-    } else if (items.length > 1) {
-      succeeded = await handleBatchMove(items, targetPrefix);
-      if (succeeded) selection.clear();
+    if (await handleMove(items, targetPrefix)) {
+      selection.clear();
+      setMoveItems(null);
     }
-    if (succeeded) setMoveItems(null);
   };
 
   // 右鍵 / 溢位選單：開啟（資料夾進入、檔案預覽）
@@ -264,7 +256,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
 
     return [
       { label: target.isFolder ? '開啟資料夾' : '預覽', icon: target.isFolder ? '📂' : '👁️', onSelect: () => openTarget(target) },
-      { label: '重新命名', icon: '✏️', onSelect: () => void openAdminActionModal('rename', target.key, target.isFolder) },
+      { label: '重新命名', icon: '✏️', onSelect: () => void openRename(target) },
       { label: '移動', icon: '📁', onSelect: () => void openMove([{ key: target.key, isFolder: target.isFolder }]) },
       { type: 'separator' },
       { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void requestDelete([{ key: target.key, isFolder: target.isFolder }]) }
@@ -274,7 +266,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   // ── 鍵盤快捷鍵：Ctrl/Cmd+A 全選、Esc 清除、Delete 刪除所選 ──
   const anyModalOpen =
     Boolean(preview.media) ||
-    Boolean(adminAction) ||
+    Boolean(renameTarget) ||
     Boolean(moveItems) ||
     newFolderOpen ||
     Boolean(passwordReq) ||
@@ -491,14 +483,11 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
         </>
       )}
 
-      <AdminActionModal
-        key={adminAction ? `${adminAction.action}-${adminAction.target.key}` : 'idle'}
-        action={adminAction?.action ?? null}
-        target={adminAction?.target ?? null}
-        maxNameLength={MAX_FOLDER_NAME_LENGTH}
-        sanitizeName={sanitizeName}
-        onCancel={() => setAdminAction(null)}
-        onConfirm={handleAdminActionConfirm}
+      <RenameModal
+        key={renameTarget?.key ?? 'idle'}
+        target={renameTarget}
+        onCancel={() => setRenameTarget(null)}
+        onConfirm={handleRename}
       />
 
       <MediaPreviewModal
