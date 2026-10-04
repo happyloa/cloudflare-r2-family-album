@@ -10,8 +10,10 @@
 
 ## 需求
 
-- Node.js 22 系列至少 22.22.2、24 系列至少 24.15.0，或 26+（CI 與 Workers Builds 使用 `.nvmrc` 的 Node 22.22.2）
+- Node.js 22 系列至少 22.22.2、24 系列至少 24.15.0，或 26+（CI 與 Workers Builds 使用 `.nvmrc` 的 Node 24.21.0 LTS）
 - Cloudflare 帳戶，以及可存取既有 R2 bucket 的 S3 API Access Key
+
+本機建議使用 Node 24.21.0 LTS。Node 24.12.0 低於 jsdom 及其依賴要求的版本，安裝時會出現 `EBADENGINE`；請先更新 Node，再安裝套件。
 
 ## 本機開發
 
@@ -65,7 +67,7 @@ npm run dev:worker
 
 ## 驗證與部署
 
-`.github/workflows/verify.yml` 會在針對 `main` 的 Pull Request 與手動觸發時執行 `npm ci` 與 `npm run verify`；它不含部署權限，也不會發佈 Worker。
+`.github/workflows/verify.yml` 會在針對 `main` 的 Pull Request 與手動觸發時執行 `npm ci`、套件漏洞檢查與 `npm run verify`；它不含部署權限，也不會發佈 Worker。
 
 正式環境由 Cloudflare Workers Builds 管理：推送到 `main` 時，會執行 `npm run deploy` 發佈 `family-album` Worker。若要確保部署前一定先通過 Verify，請在 GitHub 對 `main` 設定 branch protection，將 `Verify / verify` 設為 required status check，並禁止直接推送。
 
@@ -83,6 +85,15 @@ npm run deploy
 ```
 
 `wrangler.jsonc` 啟用 `keep_vars: true`，會保留 Dashboard 中既有的 runtime variables。
+
+## 依賴安全修補
+
+`package.json` 保留兩個針對 Vinext 間接依賴的覆寫：
+
+- `satori` 的 `fflate` 使用 0.7.5，修復 ZIP64 解析漏洞並保留 0.7 系列的解壓縮 API。0.8 系列改動了同步解壓縮的第二個參數，不能直接替換。
+- `vite-plugin-dynamic-import` 的 `fast-glob` 使用 `vendor/dynamic-import-glob`，只提供該套件實際使用的同步搜尋介面，底層採 `tinyglobby`。這會移除尚無修補版的 `braces`；相容性測試涵蓋副檔名選項、資料夾 index，以及動態 `require()` 的建置與執行。
+
+後續升級 Vinext 時，若上游已修補這些依賴，可移除對應覆寫並重新執行漏洞檢查及完整驗證。參考：[braces 漏洞公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)、[tinyglobby 遷移指引](https://superchupu.dev/tinyglobby/migration)、[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。
 
 ## API
 
