@@ -2,7 +2,7 @@
 
 家庭相簿管理介面，使用 Next.js App Router 與 React。Next.js 提供本機開發與建置流程；正式部署透過 Vinext、Vite 與 Cloudflare Vite plugin 建置為 Cloudflare Worker，以 S3 API 存取既有 R2 bucket。
 
-介面使用 Tailwind CSS 與系統字型，不下載額外中文字型。
+介面使用 Tailwind CSS 與思源黑體（Noto Sans TC）。字型透過 `@fontsource/noto-sans-tc` 隨靜態資產部署，載入 400、500、600、700 字重，由相簿網站提供字型檔案。
 
 ## 目前存取模型
 

@@ -1,4 +1,8 @@
 import type { Metadata } from 'next';
+import '@fontsource/noto-sans-tc/400.css';
+import '@fontsource/noto-sans-tc/500.css';
+import '@fontsource/noto-sans-tc/600.css';
+import '@fontsource/noto-sans-tc/700.css';
 import './globals.css';
 
 // 設定 Metadata，包含 SEO 與爬蟲設定

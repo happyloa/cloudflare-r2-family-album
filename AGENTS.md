@@ -14,7 +14,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 原始碼使用 Next.js App Router 與 React；正式 Worker 透過 Vinext、Vite 和 `@cloudflare/vite-plugin` 建置。Next.js 與 Workers 兩種流程都需保持可用。
 - Node 版本依 `.nvmrc`，套件與指令依 `package.json`，環境變數依 `.env.example`、`.dev.vars.example`；操作說明見 `README.md`。
 - `app/api/` 處理 API，`lib/r2/` 封裝 S3 操作，`lib/upload/` 共用上傳規則，`components/media/` 與其 hooks 處理相簿互動。限制常數以 `lib/constants.ts`、`lib/upload/constants.ts` 為準。
-- 介面使用 Tailwind 與系統字型。優先沿用現有元件及共用流程，保持依賴精簡。
+- 介面使用 Tailwind 與思源黑體（Noto Sans TC），由 `@fontsource/noto-sans-tc` 隨靜態資產部署。保留使用者指定的字型，優先沿用現有元件及共用流程，保持依賴精簡。
 
 ## R2 與資料保護
 

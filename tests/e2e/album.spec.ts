@@ -102,8 +102,14 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain('"Noto Sans TC"');
+  expect(await page.evaluate(async () => {
+    const faces = await document.fonts.load('400 16px "Noto Sans TC"', '我們這一家');
+    return faces.length > 0 && faces.every(face => face.status === 'loaded');
+  })).toBe(true);
   const fontRequests = await page.evaluate(() => performance.getEntriesByType('resource').filter(item => /\.woff2?/.test(item.name)));
-  expect(fontRequests).toHaveLength(0);
+  expect(fontRequests.length).toBeGreaterThan(0);
+  expect(fontRequests.every(item => new URL(item.name).origin === new URL(page.url()).origin)).toBe(true);
   await page.screenshot({ path: `.cache/${testInfo.project.name}-album.png`, fullPage: true });
 });
 
