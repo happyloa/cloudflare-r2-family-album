@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MAX_BATCH_ITEMS } from '@/lib/constants';
 
 import { MessageTone } from '../types';
 
@@ -44,23 +45,10 @@ export function useUndoableDelete({
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const pendingDeleteRef = useRef<PendingDelete | null>(null);
   const deleteTimerRef = useRef<number | null>(null);
-
-  // 把尚在 Undo 視窗的刪除確實送出（換資料夾或卸載時無法跨資料夾復原）
-  const flushPendingDelete = () => {
-    if (deleteTimerRef.current) {
-      window.clearTimeout(deleteTimerRef.current);
-      deleteTimerRef.current = null;
-    }
-    const pending = pendingDeleteRef.current;
-    pendingDeleteRef.current = null;
-    setPendingDelete(null);
-    if (pending && pending.items.length) void commitDeleteOnServer(pending.items);
-  };
-  const flushRef = useRef(flushPendingDelete);
-  flushRef.current = flushPendingDelete;
+  const requestInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const startUndoableDelete = (items: Item[]) => {
-    flushPendingDelete(); // 先送出上一批，避免堆疊
     removeLocalItems(items);
     onDeleted?.();
     const pending = { items, prefix: currentPrefix };
@@ -81,6 +69,7 @@ export function useUndoableDelete({
       deleteTimerRef.current = null;
     }
     const pending = pendingDeleteRef.current;
+    if (!pending) return;
     pendingDeleteRef.current = null;
     setPendingDelete(null);
     if (pending?.prefix === currentPrefix) {
@@ -91,32 +80,50 @@ export function useUndoableDelete({
 
   const requestDelete = async (items: Item[]) => {
     if (items.length === 0) return;
-    const allowed = await requestAdminToken('請輸入管理密碼以刪除項目');
-    if (!allowed) return;
+    if (items.length > MAX_BATCH_ITEMS) {
+      pushMessage(`每批最多刪除 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
+      return;
+    }
+    if (pendingDeleteRef.current || requestInFlightRef.current) {
+      pushMessage('上一批項目仍可復原，請先復原或等候刪除完成。', 'info');
+      return;
+    }
+    requestInFlightRef.current = true;
+    try {
+      const allowed = await requestAdminToken('請輸入管理密碼以刪除項目');
+      if (!allowed) return;
 
-    // 資料夾採「解包」：內容移到上一層、不會被刪除；只有檔案是真的刪除
-    const hasFolder = items.some((item) => item.isFolder);
-    const hasFile = items.some((item) => !item.isFolder);
-    const message =
-      hasFolder && hasFile
-        ? '將刪除選取的檔案，並把資料夾解包（內容移到上一層、不會刪除）。可在數秒內復原。'
-        : hasFolder
-          ? '將移除資料夾，裡面的內容會移到上一層（不會被刪除）。可在數秒內復原。'
-          : `確定刪除選取的 ${items.length} 個檔案？可在數秒內復原。`;
-    const ok = await confirm({
-      title: '刪除項目',
-      message,
-      confirmLabel: '確定',
-      danger: hasFile
-    });
-    if (!ok) return;
+      // 資料夾採「解包」：內容移到上一層、不會被刪除；只有檔案是真的刪除
+      const hasFolder = items.some((item) => item.isFolder);
+      const hasFile = items.some((item) => !item.isFolder);
+      const message =
+        hasFolder && hasFile
+          ? '將刪除選取的檔案，並把資料夾解包（內容移到上一層、不會刪除）。可在數秒內復原。'
+          : hasFolder
+            ? '將移除資料夾，裡面的內容會移到上一層（不會被刪除）。可在數秒內復原。'
+            : `確定刪除選取的 ${items.length} 個檔案？可在數秒內復原。`;
+      const ok = await confirm({
+        title: '刪除項目',
+        message,
+        confirmLabel: '確定',
+        danger: hasFile
+      });
+      if (!ok || !mountedRef.current) return;
 
-    startUndoableDelete(items);
+      startUndoableDelete(items);
+    } finally {
+      requestInFlightRef.current = false;
+    }
   };
 
-  // 換資料夾或卸載時，把待刪除確實送出
+  // 離開頁面時取消尚未到期的刪除，保留完整的六秒復原時間。
   useEffect(() => {
-    return () => flushRef.current();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (deleteTimerRef.current) window.clearTimeout(deleteTimerRef.current);
+      pendingDeleteRef.current = null;
+    };
   }, []);
 
   return { pendingDelete, requestDelete, undoDelete };

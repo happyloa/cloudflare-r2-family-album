@@ -16,7 +16,7 @@ type UseMediaDragDropProps = {
     key: string;
     isFolder: boolean;
     targetPrefix?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 };
 
 /**

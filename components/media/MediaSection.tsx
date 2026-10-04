@@ -1,21 +1,15 @@
 'use client';
 
 import { type DragEvent, type KeyboardEvent, type MouseEvent, useEffect, useRef } from 'react';
+import { getMediaName } from '@/lib/media-name';
 
 import { ContextTarget } from './hooks/useContextMenu';
 import { useLongPress } from './hooks/useLongPress';
 import { makeSelectionId, SelectionId } from './hooks/useSelection';
-import type { SortDir, SortKey } from './hooks/useMediaData';
 import { MediaThumbnail } from './MediaThumbnail';
 import { MediaFile } from './types';
 
 type ItemModifiers = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
-
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'date', label: '日期' },
-  { key: 'name', label: '名稱' },
-  { key: 'size', label: '大小' }
-];
 
 export function MediaSection({
   allFilesCount,
@@ -27,14 +21,7 @@ export function MediaSection({
   filterLabel,
   filter,
   filterVisible,
-  onFilterChange,
-  searchEnabled,
   searchQuery,
-  onSearchChange,
-  sortKey,
-  sortDir,
-  onSortKeyChange,
-  onSortDirToggle,
   isAdmin,
   isSelected,
   selectionMode,
@@ -53,14 +40,7 @@ export function MediaSection({
   filterLabel: string;
   filter: 'all' | 'image' | 'video';
   filterVisible: boolean;
-  onFilterChange: (value: 'all' | 'image' | 'video') => void;
-  searchEnabled: boolean;
   searchQuery: string;
-  onSearchChange: (value: string) => void;
-  sortKey: SortKey;
-  sortDir: SortDir;
-  onSortKeyChange: (value: SortKey) => void;
-  onSortDirToggle: () => void;
   isAdmin: boolean;
   isSelected: (id: SelectionId) => boolean;
   selectionMode: boolean;
@@ -89,13 +69,7 @@ export function MediaSection({
     return () => observer.disconnect();
   }, [hasMore, onLoadMore, files.length, autoLoadEnabled]);
 
-  if (!allFilesCount && !searchEnabled) return null;
-
-  const filters: { key: 'all' | 'image' | 'video'; label: string }[] = [
-    { key: 'all', label: '全部' },
-    { key: 'image', label: '圖片' },
-    { key: 'video', label: '影片' }
-  ];
+  if (!allFilesCount) return null;
 
   const formatTimestamp = (value: string) => {
     const parsed = new Date(value);
@@ -139,72 +113,8 @@ export function MediaSection({
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-xl font-bold text-white">媒體檔案</h3>
           <span className="rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">
-            {filterLabel}（共 {files.length}）
+            {filterLabel}（{files.length}）
           </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {searchEnabled ? (
-            <label className="flex items-center gap-2 rounded-xl border border-surface-700/50 bg-surface-800/50 px-3 py-2 text-xs font-semibold text-surface-200">
-              <span className="text-surface-500">搜尋</span>
-              <input
-                className="w-40 rounded-lg border border-surface-700 bg-surface-900/80 px-3 py-2 text-xs font-medium text-white shadow-inner outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="搜尋資料夾或媒體"
-                aria-label="搜尋資料夾與媒體"
-              />
-            </label>
-          ) : null}
-
-          {/* 排序控制 */}
-          <div className="flex items-center gap-1 rounded-xl border border-surface-700/50 bg-surface-800/50 px-2 py-1.5 text-xs font-semibold text-surface-200">
-            <span className="px-1 text-surface-500">排序</span>
-            {SORT_OPTIONS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onSortKeyChange(key)}
-                className={`rounded-lg px-2.5 py-1 transition-all duration-200 cursor-pointer ${
-                  sortKey === key
-                    ? 'bg-primary-500/15 text-primary-100 ring-1 ring-primary-500/40'
-                    : 'text-surface-200 hover:text-primary-100'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={onSortDirToggle}
-              className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-lg text-surface-300 transition-colors hover:bg-surface-700 hover:text-white cursor-pointer"
-              aria-label={sortDir === 'asc' ? '改為遞減' : '改為遞增'}
-              title={sortDir === 'asc' ? '遞增' : '遞減'}
-            >
-              <svg className={`h-4 w-4 transition-transform ${sortDir === 'asc' ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
-            </button>
-          </div>
-
-          {filterVisible ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-surface-700/50 bg-surface-800/50 px-3 py-2 text-xs font-semibold text-surface-200">
-              {filters.map(({ key, label }) => (
-                <button
-                  key={key}
-                  className={`rounded-lg border px-3 py-1.5 transition-all duration-200 cursor-pointer ${
-                    filter === key
-                      ? 'border-primary-500/50 bg-primary-500/15 text-primary-100 shadow-glow'
-                      : 'border-surface-700 bg-surface-800 text-surface-100 hover:border-primary-500/40 hover:text-primary-100'
-                  }`}
-                  type="button"
-                  onClick={() => onFilterChange(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -255,14 +165,14 @@ export function MediaSection({
                 className="flex w-full cursor-pointer flex-col text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300"
                 aria-label={
                   isAdmin && selectionMode
-                    ? `${selected ? '取消選取' : '選取'}媒體 ${item.key.split('/').pop() || item.key}`
-                    : `預覽媒體 ${item.key.split('/').pop() || item.key}`
+                    ? `${selected ? '取消選取' : '選取'}媒體 ${getMediaName(item.key)}`
+                    : `預覽媒體 ${getMediaName(item.key)}`
                 }
               >
                 <MediaThumbnail media={item} />
                 <div className="flex flex-col gap-1 p-4 text-sm text-surface-100">
-                  <p className="truncate text-sm font-semibold text-white" title={item.key}>
-                    {item.key.split('/').pop()}
+                  <p className="truncate text-sm font-semibold text-white" title={getMediaName(item.key)}>
+                    {getMediaName(item.key)}
                   </p>
                   {item.lastModified ? (
                     <p className="text-xs text-surface-500">更新：{formatTimestamp(item.lastModified)}</p>
@@ -282,7 +192,7 @@ export function MediaSection({
                   className={`absolute left-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 ${
                     selected
                       ? 'border-primary-400 bg-primary-500 text-surface-950'
-                      : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
+                      : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100'}`
                   }`}
                   aria-label={selected ? '取消選取' : '選取'}
                   aria-pressed={selected}
@@ -327,7 +237,7 @@ export function MediaSection({
           </button>
         </div>
       ) : files.length > 0 ? (
-        <p className="py-4 text-center text-xs text-surface-600">已顯示全部 {files.length} 個媒體</p>
+        <p className="py-4 text-center text-xs text-surface-600">{searchQuery.trim() || filter !== 'all' ? '符合條件' : '已顯示全部'} {files.length} 個媒體</p>
       ) : null}
     </div>
   );

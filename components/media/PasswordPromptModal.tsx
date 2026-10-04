@@ -64,7 +64,7 @@ export function PasswordPromptModal({
       if (ok) {
         onClose(true);
       } else {
-        setError('管理密碼不正確，請再試一次。');
+        setError('驗證未通過，請確認提示後重試。');
         setSubmitting(false);
         formRef.current?.querySelector<HTMLInputElement>('input[type="password"]')?.select();
       }
@@ -86,7 +86,7 @@ export function PasswordPromptModal({
     >
       <form
         ref={formRef}
-        className="w-[min(420px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
+        className="max-h-[calc(100dvh-2rem)] w-[min(420px,92vw)] space-y-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
       >

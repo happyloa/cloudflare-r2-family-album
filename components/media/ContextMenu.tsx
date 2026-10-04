@@ -53,7 +53,7 @@ export function ContextMenu({
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusTimer = window.setTimeout(() => {
-      getMenuItems()[0]?.focus();
+      getMenuItems()[0]?.focus({ preventScroll: true });
     }, 0);
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -74,20 +74,25 @@ export function ContextMenu({
       const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + items.length) % items.length;
       items[nextIndex]?.focus();
     };
-    const handleScroll = () => onClose();
+    const openingScroll = { x: window.scrollX, y: window.scrollY };
+    const handleScroll = (event: Event) => {
+      if (ref.current?.contains(event.target as Node)) return;
+      if (event.target === document && window.scrollX === openingScroll.x && window.scrollY === openingScroll.y) return;
+      onClose();
+    };
 
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleKey);
     window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', handleScroll);
+    window.addEventListener('resize', onClose);
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKey);
       window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', handleScroll);
+      window.removeEventListener('resize', onClose);
       if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-        previouslyFocused.focus();
+        previouslyFocused.focus({ preventScroll: true });
       }
     };
   }, [open, onClose]);

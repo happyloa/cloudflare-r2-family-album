@@ -14,6 +14,7 @@ export function Toolbar({
   usageLoading,
   usageError,
   uploading,
+  canCreateFolder = true,
   onEnableAdmin,
   onExitAdmin,
   onPickUpload,
@@ -24,6 +25,7 @@ export function Toolbar({
   usageLoading: boolean;
   usageError: string;
   uploading: boolean;
+  canCreateFolder?: boolean;
   onEnableAdmin: () => void;
   onExitAdmin: () => void;
   onPickUpload: () => void;
@@ -47,7 +49,7 @@ export function Toolbar({
     <div className="glass-card relative z-30 flex flex-col gap-4 rounded-3xl border border-surface-700/50 bg-surface-900/80 p-4 shadow-xl ring-1 ring-white/5 sm:flex-row sm:items-center sm:justify-between sm:p-5">
       <div className="flex items-center gap-2.5">
         <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-        <h2 className="text-lg font-bold text-white">媒體控制台</h2>
+        <h1 className="text-lg font-bold text-white">我們這一家</h1>
         <span
           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
             isAdmin
@@ -55,7 +57,7 @@ export function Toolbar({
               : 'bg-surface-800 text-surface-300 ring-surface-600'
           }`}
         >
-          {isAdmin ? '管理模式' : '唯讀'}
+          {isAdmin ? '管理模式' : '公開瀏覽'}
         </span>
       </div>
 
@@ -103,13 +105,15 @@ export function Toolbar({
                     <button
                       type="button"
                       role="menuitem"
+                      disabled={!canCreateFolder}
+                      title={!canCreateFolder ? '已達兩層，請回上一層建立資料夾。' : undefined}
                       onClick={() => {
                         setNewMenuOpen(false);
                         onCreateFolder();
                       }}
                       className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-300 cursor-pointer"
                     >
-                      <span className="w-5 text-center text-base leading-none">📁</span>建立資料夾
+                      <span className="w-5 text-center text-base leading-none">📁</span>{canCreateFolder ? '建立資料夾' : '已達資料夾層數上限'}
                     </button>
                   </div>
                 </>

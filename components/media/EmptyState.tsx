@@ -6,7 +6,7 @@ type EmptyStateProps = {
 
 export function EmptyState({ atMaxDepth = false }: EmptyStateProps) {
   const title = atMaxDepth ? '目前沒有媒體' : '目前沒有媒體或資料夾';
-  const description = atMaxDepth ? '上傳檔案以開始建立你的家庭相簿。' : '可點擊「建立資料夾」或「上傳檔案」開始建立你的家庭相簿。';
+  const description = atMaxDepth ? '管理模式下可上傳檔案。' : '管理模式下可建立資料夾或上傳檔案。';
 
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-surface-700 bg-surface-800/50 p-8 text-center text-surface-200 shadow-xl ring-1 ring-white/5">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type BucketUsageResponse = { totalBytes?: number };
@@ -11,9 +11,11 @@ export function useBucketUsage(enabled: boolean, authorizedFetch: AuthorizedFetc
   const [usageBytes, setUsageBytes] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const requestVersionRef = useRef(0);
 
   const refresh = useCallback(async (force = false) => {
     if (!enabled) return;
+    const version = ++requestVersionRef.current;
 
     setLoading(true);
     try {
@@ -21,19 +23,23 @@ export function useBucketUsage(enabled: boolean, authorizedFetch: AuthorizedFetc
       const response = await authorizedFetch(`/api/media/usage${force ? '?force=true' : ''}`);
       if (!response.ok) throw new Error('Failed to fetch usage');
       const data = (await response.json()) as BucketUsageResponse;
+      if (version !== requestVersionRef.current) return;
       const parsed = Number(data?.totalBytes);
-      setUsageBytes(Number.isFinite(parsed) ? parsed : 0);
+      if (typeof data.totalBytes !== 'number' || !Number.isFinite(parsed) || parsed < 0) throw new Error('Invalid usage response');
+      setUsageBytes(parsed);
     } catch (err) {
+      if (version !== requestVersionRef.current) return;
       console.error('Failed to load bucket usage', err);
       setUsageBytes(null);
       setError('無法取得目前容量，請稍後再試。');
     } finally {
-      setLoading(false);
+      if (version === requestVersionRef.current) setLoading(false);
     }
   }, [authorizedFetch, enabled]);
 
   useEffect(() => {
     if (!enabled) {
+      requestVersionRef.current += 1;
       setUsageBytes(null);
       setError('');
       setLoading(false);
@@ -41,6 +47,7 @@ export function useBucketUsage(enabled: boolean, authorizedFetch: AuthorizedFetc
     }
 
     void refresh();
+    return () => { requestVersionRef.current += 1; };
   }, [enabled, refresh]);
 
   return { usageBytes, loading, error, refresh };

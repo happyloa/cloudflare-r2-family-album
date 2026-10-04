@@ -6,7 +6,7 @@
 
 - 媒體清單與 `R2_PUBLIC_BASE` 的檔案 URL 目前是公開讀取。
 - 建立、移動、刪除、上傳與使用量查詢需要 `x-admin-token`。
-- 因此這不是端對端私密相簿；若相片必須只供特定使用者存取，需先決定登入／授權模型並停止使用公開 R2 URL。
+- 目前採用「公開瀏覽、密碼管理」。知道網址的人可以瀏覽相簿與媒體。
 
 ## 需求
 
@@ -48,6 +48,12 @@ npm run dev:worker
 
 上傳限制只在 Worker runtime 解析；管理介面會向受保護的 `GET /api/upload` 取得實際值，因此不要設定 `NEXT_PUBLIC_MAX_*`。每批最多 20 個檔案、總容量最高 32 MB。支援 JPEG、PNG、WebP、GIF、AVIF、HEIC／HEIF、MP4、WebM 與 QuickTime；伺服器會同時驗證宣告的 MIME type 與檔案 signature。
 
+瀏覽器上傳時只會嘗試壓縮 JPEG，轉換結果較大時保留原檔；其他圖片格式保留原檔，避免動畫被轉成靜態圖片。HEIC／HEIF 與 QuickTime 能否直接預覽取決於瀏覽器，載入失敗時會提供提示與另開檔案的入口。
+
+資料夾最多兩層。批次移動或刪除每次最多 200 個項目，管理 API 的 JSON body 上限為 256 KiB。刪除確認後有六秒復原時間；期限內離開或重新整理頁面會取消尚未送出的刪除。期限到期後才送到伺服器，之後無法復原。刪除資料夾會把內容移到上一層；檔案才會被刪除。
+
+介面的 10 GB 容量條與超額確認是前端提醒，並非伺服器硬性配額，也不保證 Cloudflare 帳單為零。
+
 ## 指令
 
 | 指令 | 用途 |
@@ -57,6 +63,8 @@ npm run dev:worker
 | `npm run typecheck` | 產生 Next 型別並執行 TypeScript 檢查 |
 | `npm run test` | 以 Vitest watch mode 執行測試 |
 | `npm run test:run` | 執行一次 Vitest 回歸測試 |
+| `npm run test:e2e` | 以隔離資料驗證 Next.js 的桌面與手機操作 |
+| `npm run test:e2e:worker` | 以隔離資料驗證已建置 Worker 的桌面與手機操作 |
 | `npm run check:vinext` | Vinext 相容性檢查 |
 | `npm run build` | 建置 Next.js |
 | `npm run build:worker` | 建置 Workers 產物 |
@@ -67,7 +75,20 @@ npm run dev:worker
 
 ## 驗證與部署
 
-`.github/workflows/verify.yml` 會在針對 `main` 的 Pull Request 與手動觸發時執行 `npm ci`、套件漏洞檢查與 `npm run verify`；它不含部署權限，也不會發佈 Worker。
+`.github/workflows/verify.yml` 會在針對 `main` 的 Pull Request 與手動觸發時執行 `npm ci`、套件漏洞檢查、`npm run verify` 與兩種 runtime 的 Playwright 測試；它不含部署權限，也不會發佈 Worker。
+
+首次執行瀏覽器測試前，先安裝 Chromium；Worker 測試需要先建置：
+
+```powershell
+npx playwright install chromium --only-shell
+npm run test:e2e
+npm run build:worker
+npm run test:e2e:worker
+```
+
+測試會在 `127.0.0.1:3100` 啟動獨立服務，使用測試密碼與本機合成媒體。清單、容量與所有 R2 寫入請求都由測試攔截；管理密碼驗證與上傳限制查詢會走本機服務。R2 操作另有模擬 S3 的回歸測試，不會改動正式相簿。
+
+完整檢查結果與驗證範圍見 [系統檢查紀錄](docs/system-review.md)。
 
 正式環境由 Cloudflare Workers Builds 管理：推送到 `main` 時，會執行 `npm run deploy` 發佈 `family-album` Worker。若要確保部署前一定先通過 Verify，請在 GitHub 對 `main` 設定 branch protection，將 `Verify / verify` 設為 required status check，並禁止直接推送。
 

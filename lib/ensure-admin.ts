@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual as compareBuffers } from 'node:crypto';
 
 // ── 設定常數 ──
 
@@ -26,6 +27,8 @@ const MAX_FAILURES = readPositiveInt(
 
 type MemoryEntry = { count: number; expiresAt: number };
 const store = new Map<string, MemoryEntry>();
+const MAX_TRACKED_IPS = 4096;
+let lastCleanupAt = 0;
 
 function getCount(key: string): number {
   const entry = store.get(key);
@@ -39,8 +42,13 @@ function getCount(key: string): number {
 
 function increment(key: string): number {
   const now = Date.now();
+  if (now - lastCleanupAt > 30000 || store.size >= MAX_TRACKED_IPS) {
+    for (const [storedKey, entry] of store) if (now >= entry.expiresAt) store.delete(storedKey);
+    lastCleanupAt = now;
+  }
   const entry = store.get(key);
   if (!entry || now > entry.expiresAt) {
+    if (store.size >= MAX_TRACKED_IPS) return MAX_FAILURES;
     store.set(key, {
       count: 1,
       expiresAt: now + RATE_LIMIT_WINDOW_SECONDS * 1000,
@@ -54,18 +62,13 @@ function increment(key: string): number {
 
 // ── 常數時間字串比對 ──
 
-// 逐字元 XOR 累加，比較時間不隨字串長度或不匹配位置變化，避免透過回應時間差猜測密碼。
+// 使用 runtime 提供的常數時間比較，不依第一個不匹配字元提早返回。
 function timingSafeEqual(a: string, b: string): boolean {
   const bufA = new TextEncoder().encode(a);
   const bufB = new TextEncoder().encode(b);
-  const length = Math.max(bufA.length, bufB.length);
-  let diff = bufA.length ^ bufB.length;
-
-  for (let i = 0; i < length; i += 1) {
-    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
-  }
-
-  return diff === 0;
+  return bufA.byteLength === bufB.byteLength
+    ? compareBuffers(bufA, bufB)
+    : !compareBuffers(bufA, bufA);
 }
 
 // ── 取得客戶端 IP ──

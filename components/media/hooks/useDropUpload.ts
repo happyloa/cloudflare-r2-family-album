@@ -22,6 +22,7 @@ type UseDropUploadProps = {
   currentPrefix: string;
   adminTokenRef: { current: string };
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
+  clearAdminSession: () => void;
   pushMessage: (text: string, tone: MessageTone) => void;
   confirm: ConfirmFn;
   usageBytes: number | null;
@@ -39,6 +40,7 @@ export function useDropUpload({
   currentPrefix,
   adminTokenRef,
   requestAdminToken,
+  clearAdminSession,
   pushMessage,
   confirm,
   usageBytes,
@@ -74,7 +76,7 @@ export function useDropUpload({
 
         let limits: UploadLimits;
         try {
-          limits = await fetchUploadLimits(adminTokenRef.current);
+          limits = await fetchUploadLimits(adminTokenRef.current, clearAdminSession);
         } catch {
           pushMessage('無法取得目前上傳限制，請稍後再試。', 'error');
           return;
@@ -118,6 +120,7 @@ export function useDropUpload({
           files: within,
           path: uploadPrefix,
           adminToken: adminTokenRef.current,
+          onUnauthorized: clearAdminSession,
           onProgress: (percent) => setDropProgress(percent ?? 0)
         });
 
@@ -185,7 +188,7 @@ export function useDropUpload({
         setDropUploading(false);
       }
     },
-    [currentPrefix, adminTokenRef, requestAdminToken, pushMessage, confirm, usageBytes, refreshUsage, loadMedia, upsertLocalItems]
+    [currentPrefix, adminTokenRef, requestAdminToken, clearAdminSession, pushMessage, confirm, usageBytes, refreshUsage, loadMedia, upsertLocalItems]
   );
 
   useEffect(() => {

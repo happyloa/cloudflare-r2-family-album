@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "@/lib/constants";
+import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "@/lib/constants";
 import { requireAdmin } from "@/lib/ensure-admin";
-import { getDepth } from "@/lib/path";
+import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "@/lib/path";
+import { createLimitedRequest } from "@/lib/upload/body-limit";
 import {
   batchDelete,
   batchMove,
@@ -12,6 +13,7 @@ import {
   moveFolder,
   renameFile,
   renameFolder,
+  R2ActionError,
 } from "@/lib/r2";
 
 type BatchItem = { key: string; isFolder?: boolean };
@@ -25,7 +27,8 @@ async function parseJsonObject(
   request: NextRequest,
 ): Promise<JsonObject | null> {
   try {
-    const body: unknown = await request.json();
+    const limited = createLimitedRequest(request, 256 * 1024);
+    const body: unknown = await limited.request.json();
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return null;
     }
@@ -48,12 +51,12 @@ function parseOptionalBoolean(value: unknown): boolean | null {
 
 // 解析並驗證批次操作的項目陣列
 function parseBatchItems(value: unknown): BatchItem[] | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_BATCH_ITEMS) return null;
   const items: BatchItem[] = [];
   for (const raw of value) {
     if (!raw || typeof raw !== "object") return null;
     const key = (raw as { key?: unknown }).key;
-    if (typeof key !== "string" || !key) return null;
+    if (typeof key !== "string" || !key || key.length > 1024 || hasPeriodOnlyPathSegment(key)) return null;
     const isFolder = (raw as { isFolder?: unknown }).isFolder;
     if (isFolder !== undefined && typeof isFolder !== "boolean") return null;
     items.push({ key, isFolder });
@@ -63,7 +66,8 @@ function parseBatchItems(value: unknown): BatchItem[] | null {
 
 // 驗證建立資料夾請求
 export function validateCreateFolder(prefix: string, name: string | undefined) {
-  if (!name) return "資料夾名稱不可為空";
+  if (!name || !sanitizeName(name) || isPeriodOnlyPathSegment(sanitizeName(name))) return "請輸入有效的資料夾名稱";
+  if (hasPeriodOnlyPathSegment(prefix)) return "資料夾路徑無效";
 
   if (name.length > MAX_FOLDER_NAME_LENGTH) {
     return `資料夾名稱最多 ${MAX_FOLDER_NAME_LENGTH} 個字`;
@@ -81,6 +85,8 @@ export function validateRenameFolder(
   isFolder: boolean | undefined,
   newName: string,
 ) {
+  if (!sanitizeName(newName) || isPeriodOnlyPathSegment(sanitizeName(newName))) return "請輸入有效的名稱";
+  if (newName.length > 255) return "檔案名稱最多 255 個字元";
   if (!isFolder) return null;
 
   if (newName.length > MAX_FOLDER_NAME_LENGTH) {
@@ -95,6 +101,7 @@ export function validateMoveTarget(
   targetPrefix: string,
   isFolder: boolean | undefined,
 ) {
+  if (hasPeriodOnlyPathSegment(targetPrefix)) return "目標路徑無效";
   const targetDepth = getDepth(targetPrefix);
 
   if (targetDepth > MAX_FOLDER_DEPTH) {
@@ -176,6 +183,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ folder });
   } catch (error) {
     console.error("Failed to create folder", error);
+    if (error instanceof R2ActionError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "建立資料夾失敗" }, { status: 500 });
   }
 }
@@ -195,7 +203,7 @@ export async function PATCH(request: NextRequest) {
     if (body?.action === "batch-move") {
       const items = parseBatchItems(body.items);
       if (!items) {
-        return NextResponse.json({ error: "缺少要移動的項目" }, { status: 400 });
+        return NextResponse.json({ error: `請選擇 1 到 ${MAX_BATCH_ITEMS} 個有效項目。` }, { status: 400 });
       }
       if (!("targetPrefix" in body)) {
         return NextResponse.json({ error: "缺少目標路徑" }, { status: 400 });
@@ -271,7 +279,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ media });
   } catch (error) {
     console.error("Failed to rename item", error);
-    return NextResponse.json({ error: "重新命名失敗" }, { status: 500 });
+    if (error instanceof R2ActionError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: "操作失敗，請重新整理清單後確認結果。" }, { status: 500 });
   }
 }
 
@@ -290,7 +299,7 @@ export async function DELETE(request: NextRequest) {
     if (body?.action === "batch-delete") {
       const items = parseBatchItems(body.items);
       if (!items) {
-        return NextResponse.json({ error: "缺少要刪除的項目" }, { status: 400 });
+        return NextResponse.json({ error: `請選擇 1 到 ${MAX_BATCH_ITEMS} 個有效項目。` }, { status: 400 });
       }
 
       await batchDelete(

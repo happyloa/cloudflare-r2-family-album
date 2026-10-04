@@ -17,6 +17,7 @@ import {
   normalizePath,
   signedFetch,
   objectExists,
+  R2ActionError,
 } from "./core";
 import { clearUsageCache } from "./queries";
 
@@ -145,14 +146,14 @@ async function assertFolderDestinationAvailable(folderPath: string) {
   ]);
 
   if (exactObjectExists || nestedKeys.length > 0) {
-    throw new Error("A folder or object already exists at the destination");
+    throw new R2ActionError("目的地已有同名資料夾或檔案，請選擇其他名稱或位置。", 409);
   }
 }
 
 async function assertFileDestinationDoesNotConflictWithFolder(key: string) {
   const nestedKeys = await collectKeys(key, { includePrefixObject: true });
   if (nestedKeys.length > 0) {
-    throw new Error("A folder already exists at the destination");
+    throw new R2ActionError("目的地已有同名資料夾，請選擇其他名稱或位置。", 409);
   }
 }
 
@@ -218,10 +219,7 @@ function resolveUploadFileName(file: File) {
 }
 
 // 批次上傳檔案至 R2。
-// 同一批次內若有多個檔案清理後同名（例如兩支手機都叫 IMG_0001.HEIC），
-// 由於 Promise.all 平行處理時彼此的 Date.now() 幾乎必定相同，會產生一樣的 key 而互相覆蓋、
-// 靜默遺失照片；因此先比照 renameFile/moveFolder 既有的衝突改名邏輯，同步算好每個檔案最終不重複
-// 的 key，再平行上傳。
+// 以時間戳與 UUID 區分同名檔案，先算好 key 再平行上傳。
 export async function uploadFilesToR2(
   files: ValidatedUploadFile[],
   targetPrefix = "",
@@ -232,11 +230,12 @@ export async function uploadFilesToR2(
   }
 
   const folderKey = buildFolderKey(normalizedPrefix);
-  const existingNames = await listExistingFileNames(normalizedPrefix);
+  // 隨機識別碼已避免跨請求碰撞，上傳前不必遞迴掃描整個資料夾。
+  const existingNames = new Set<string>();
 
   const prepared = files.map(({ file, contentType }) => {
     const sanitizedFileName = resolveUploadFileName(file);
-    const candidateName = `${Date.now()}-${sanitizedFileName}`;
+    const candidateName = `${Date.now()}-${crypto.randomUUID()}-${sanitizedFileName}`;
     const finalName = buildUniqueFileNameForConflict(candidateName, existingNames);
     existingNames.add(finalName);
     return { file, contentType, key: `${folderKey}${finalName}` };
@@ -265,6 +264,8 @@ export async function uploadFilesToR2(
         key,
         url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
         type: inferType(key, contentType),
+        size: file.size,
+        lastModified: new Date().toISOString(),
       } satisfies MediaFile;
     }),
   );
@@ -465,7 +466,7 @@ export async function moveFolder(key: string, targetPrefix: string) {
   }
 
   if (isSameOrDescendantPath(safeTargetPrefix, normalizedKey)) {
-    throw new Error("Cannot move a folder into itself or one of its descendants");
+    throw new R2ActionError("無法把資料夾移到自己或自己的子資料夾。");
   }
 
   const targetFolderPath = safeTargetPrefix
@@ -477,6 +478,13 @@ export async function moveFolder(key: string, targetPrefix: string) {
   const targetPrefixKey = buildFolderKey(targetFolderPath);
 
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
+  const destinationKeys = keys.map(sourceKey => sourceKey.replace(sourcePrefix, targetPrefixKey));
+  if (getDepth(targetFolderPath) > MAX_FOLDER_DEPTH || destinationKeys.some(targetKey => {
+    const folderPath = targetKey.endsWith('/') ? targetKey : targetKey.split('/').slice(0, -1).join('/');
+    return getDepth(folderPath) > MAX_FOLDER_DEPTH;
+  })) {
+    throw new R2ActionError("移動後的子資料夾會超過兩層，請選擇較淺的目標位置。");
+  }
   const existingNamesByFolder =
     await listExistingFileNamesByFolder(targetFolderPath);
 

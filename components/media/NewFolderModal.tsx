@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useId, useState } from 'react';
 import { MAX_FOLDER_NAME_LENGTH } from './constants';
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { sanitizeName } from './sanitize';
+import { isPeriodOnlyPathSegment } from '@/lib/path';
 
 export function NewFolderModal({
   open,
@@ -51,7 +52,7 @@ export function NewFolderModal({
 
   const sanitized = sanitizeName(value);
   const tooLong = sanitized.length > MAX_FOLDER_NAME_LENGTH;
-  const error = tooLong ? `資料夾名稱最多 ${MAX_FOLDER_NAME_LENGTH} 個字` : '';
+  const error = isPeriodOnlyPathSegment(sanitized) ? '請輸入有效的資料夾名稱' : tooLong ? `資料夾名稱最多 ${MAX_FOLDER_NAME_LENGTH} 個字` : '';
   const disabled = !sanitized || Boolean(error) || submitting;
   const inputDescription = error ? `${descriptionId} ${errorId}` : descriptionId;
 
@@ -82,7 +83,7 @@ export function NewFolderModal({
     >
       <form
         ref={formRef}
-        className="w-[min(440px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
+        className="max-h-[calc(100dvh-2rem)] w-[min(440px,92vw)] space-y-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
       >

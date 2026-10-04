@@ -24,7 +24,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(active: boolea
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusTimer = window.setTimeout(() => {
-      getFocusableElements(containerRef.current)[0]?.focus();
+      getFocusableElements(containerRef.current)[0]?.focus({ preventScroll: true });
     }, 0);
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -65,7 +65,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(active: boolea
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', handleKeyDown);
       if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-        previouslyFocused.focus();
+        previouslyFocused.focus({ preventScroll: true });
       }
     };
   }, [active]);

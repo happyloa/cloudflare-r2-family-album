@@ -12,9 +12,10 @@ import type { UploadLimits } from '@/lib/upload/constants';
 async function compressImage(
   file: File,
 ): Promise<{ file: File; warning?: string }> {
+  let image: ImageBitmap | undefined;
   try {
     // imageOrientation: 'from-image' 確保套用 EXIF 旋轉，避免手機照片被轉向
-    const image = await createImageBitmap(file, {
+    image = await createImageBitmap(file, {
       imageOrientation: 'from-image',
     });
 
@@ -36,12 +37,14 @@ async function compressImage(
       canvas.toBlob((result) => resolve(result), 'image/webp', 0.82),
     );
 
-    if (!blob) return { file };
+    if (!blob || blob.size >= file.size) return { file };
 
     const compressedName = file.name.replace(/\.[^.]+$/, '.webp');
     return { file: new File([blob], compressedName, { type: 'image/webp' }) };
   } catch {
     return { file, warning: '圖片壓縮失敗，已改用原始檔案。' };
+  } finally {
+    image?.close();
   }
 }
 
@@ -49,7 +52,8 @@ async function compressImage(
 async function compressMedia(
   file: File,
 ): Promise<{ file: File; warning?: string }> {
-  if (file.type.startsWith('image/')) return compressImage(file);
+  // 只壓縮 JPEG，保留 GIF、WebP、APNG、AVIF 等格式可能包含的動畫。
+  if (file.type === 'image/jpeg') return compressImage(file);
   return { file };
 }
 
@@ -58,6 +62,7 @@ type UploadOptions = {
   path: string;
   adminToken?: string;
   onProgress?: (percent: number | null) => void;
+  onUnauthorized?: () => void;
 };
 
 /** The subset that the upload endpoint has explicitly confirmed. */
@@ -103,7 +108,7 @@ function isUploadLimits(value: unknown): value is UploadLimits {
 }
 
 /** 讀取目前 Worker runtime 實際套用的上傳限制，不能從 client bundle 的 process.env 推測。 */
-export async function fetchUploadLimits(adminToken: string): Promise<UploadLimits> {
+export async function fetchUploadLimits(adminToken: string, onUnauthorized?: () => void): Promise<UploadLimits> {
   const response = await fetch('/api/upload', {
     headers: { 'x-admin-token': adminToken },
     cache: 'no-store',
@@ -114,6 +119,7 @@ export async function fetchUploadLimits(adminToken: string): Promise<UploadLimit
     : null;
 
   if (!response.ok || !isUploadLimits(limits)) {
+    if (response.status === 401) onUnauthorized?.();
     throw new Error('無法取得上傳限制');
   }
   return limits;
@@ -160,6 +166,7 @@ export async function uploadFiles({
   path,
   adminToken,
   onProgress,
+  onUnauthorized,
 }: UploadOptions): Promise<UploadResult> {
   const safePath = path.trim().replace(/^\/+|\/+$/g, '');
 
@@ -176,6 +183,7 @@ export async function uploadFiles({
   return new Promise<UploadResult>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', '/api/upload');
+    request.timeout = 5 * 60 * 1000;
 
     if (adminToken) {
       request.setRequestHeader('x-admin-token', adminToken);
@@ -189,10 +197,14 @@ export async function uploadFiles({
       onProgress?.(Math.round((event.loaded / event.total) * 100));
     };
 
-    request.onload = () => resolve(parseUploadResult(request));
+    request.onload = () => {
+      if (request.status === 401) onUnauthorized?.();
+      resolve(parseUploadResult(request));
+    };
 
     request.onerror = () => reject(new Error('上傳時發生錯誤'));
     request.onabort = () => reject(new Error('上傳已被中止'));
+    request.ontimeout = () => reject(new Error('上傳逾時，請檢查連線後再試。'));
 
     request.send(formData);
   });

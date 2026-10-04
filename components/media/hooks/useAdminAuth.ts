@@ -26,14 +26,16 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   const adminTimeoutRef = useRef<number | null>(null);
   // 同步保存最新 token，供非同步流程（如拖曳上傳）在 setState 尚未 flush 時讀取
   const adminTokenRef = useRef("");
+  const validationVersionRef = useRef(0);
 
   // 清除管理員 Session (登出)
   const clearAdminSession = useCallback(
     (notice?: string) => {
+      validationVersionRef.current += 1;
       setAdminToken("");
       adminTokenRef.current = "";
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+        try { sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY); } catch { /* 瀏覽器可能停用儲存。 */ }
       }
 
       if (adminTimeoutRef.current) {
@@ -63,6 +65,7 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   // 驗證並套用 Token
   const validateAndApplyToken = useCallback(
     async (token: string, options?: { silent?: boolean }) => {
+      const version = ++validationVersionRef.current;
       const trimmed = token.trim();
       if (!trimmed) {
         clearAdminSession(options?.silent ? undefined : "請輸入管理密碼");
@@ -89,7 +92,9 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
             "x-admin-token": trimmed,
           },
           body: JSON.stringify({ action: "validate" }),
+          signal: AbortSignal.timeout(10000),
         });
+        if (version !== validationVersionRef.current) return false;
 
         if (!response.ok) {
           let payload: {
@@ -121,8 +126,10 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
                 `管理密碼不正確，還有 ${payload.remainingAttempts} 次機會`,
                 "error",
               );
-            } else {
+            } else if (response.status === 401) {
               pushMessage("管理密碼不正確，請再試一次", "error");
+            } else {
+              pushMessage("管理驗證服務暫時無法使用，請稍後再試。", "error");
             }
           }
           return false;
@@ -130,9 +137,9 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
 
         setAdminToken(trimmed);
         adminTokenRef.current = trimmed;
-        sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed);
+        try { sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed); } catch { /* 保留記憶體內的管理狀態。 */ }
         resetAdminTimeout();
-        pushMessage(options?.silent ? "" : "已啟用管理模式", "success");
+        if (!options?.silent) pushMessage("已啟用管理模式", "success");
         return true;
       } catch {
         if (!options?.silent) {
@@ -148,7 +155,7 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
   // 改用 App 內密碼對話框，驗證失敗時對話框會保持開啟讓使用者重試。
   const requestAdminToken = useCallback(
     async (promptMessage = "請輸入管理密碼以繼續"): Promise<boolean> => {
-      if (!adminToken) {
+      if (!adminTokenRef.current) {
         const ok = await openPassword({
           message: promptMessage,
           onSubmit: async (value) => validateAndApplyToken(value),
@@ -159,29 +166,33 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
       resetAdminTimeout();
       return true;
     },
-    [adminToken, openPassword, validateAndApplyToken, resetAdminTimeout],
+    [openPassword, validateAndApplyToken, resetAdminTimeout],
   );
 
   // 初始化檢查 Session Storage
   useEffect(() => {
-    const saved =
-      typeof window !== "undefined"
-        ? sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)
-        : "";
+    let saved = '';
+    try { saved = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? ''; } catch { /* 儲存不可用。 */ }
+    let frame = 0;
     if (saved) {
       // 避免在 effect 中同步呼叫 setState 導致的問題
       // 使用 requestAnimationFrame 將執行推遲到下一幀
-      requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
         void validateAndApplyToken(saved, { silent: true });
       });
     }
+    return () => {
+      cancelAnimationFrame(frame);
+      validationVersionRef.current += 1;
+      if (adminTimeoutRef.current) window.clearTimeout(adminTimeoutRef.current);
+    };
     // 僅在掛載時檢查一次 sessionStorage
   }, []);
 
   // 離開頁面時清除 Session (安全性考量)
   useEffect(() => {
     const handleBeforeUnload = () => {
-      sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+      try { sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY); } catch { /* 儲存不可用。 */ }
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -190,14 +201,17 @@ export function useAdminAuth({ pushMessage, openPassword }: UseAdminAuthProps) {
 
   // 包裝過的 Fetch，自動帶入 Admin Token
   const authorizedFetch = useCallback(
-    (input: RequestInfo | URL, init: RequestInit = {}) => {
+    async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const headers = new Headers(init.headers || {});
-      if (isAdmin && adminToken) {
-        headers.set("x-admin-token", adminToken);
+      const token = adminTokenRef.current;
+      if (token) {
+        headers.set("x-admin-token", token);
       }
-      return fetch(input, { ...init, headers });
+      const response = await fetch(input, { ...init, headers });
+      if (response.status === 401 && token && token === adminTokenRef.current) clearAdminSession();
+      return response;
     },
-    [isAdmin, adminToken],
+    [clearAdminSession],
   );
 
   return {

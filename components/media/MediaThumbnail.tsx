@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getMediaName } from '@/lib/media-name';
 
 import { MediaFile } from './types';
 
@@ -30,24 +31,7 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
     const video = videoRef.current;
     if (!video) return undefined;
 
-    const startSilentPreview = async () => {
-      video.muted = true;
-      video.playsInline = true;
-      video.loop = true;
-      video.preload = 'metadata';
-
-      try {
-        // iOS/Safari 需要觸發 play() 才會渲染第一幀，若失敗則改用備援畫面
-        setCanPreview(true);
-        // 完成第一幀渲染後再交由 canplay 事件觸發 ready 通知
-      } catch (error) {
-        console.warn('Video preview fallback:', error);
-        setCanPreview(false);
-        notifyReady();
-      }
-    };
-
-    startSilentPreview();
+    setCanPreview(true);
     return () => {
       video.pause();
       video.removeAttribute('src');
@@ -59,8 +43,8 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
     return (
       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 text-surface-100">
         <div className="flex flex-col items-center gap-2 text-xs font-semibold">
-          <span className="rounded-full bg-surface-800/70 px-3 py-1 text-[11px] text-surface-200">行動裝置預覽</span>
-          <p className="text-center text-surface-400">點擊後將載入影片</p>
+          <span className="rounded-full bg-surface-800/70 px-3 py-1 text-[11px] text-surface-200">影片</span>
+          <p className="text-center text-surface-400">無法顯示縮圖，點擊查看檔案</p>
         </div>
       </div>
     );
@@ -95,13 +79,14 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
       }}
       onBlur={() => videoRef.current?.pause()}
       onLoadedData={notifyReady}
-      onError={notifyReady}
+      onError={() => { setCanPreview(false); notifyReady(); }}
     />
   );
 }
 
 export function MediaThumbnail({ media }: { media: MediaFile }) {
   const [loadedUrl, setLoadedUrl] = useState('');
+  const [failedUrl, setFailedUrl] = useState('');
   const isLoaded = loadedUrl === media.url;
   const handleReady = useCallback(() => setLoadedUrl(media.url), [media.url]);
 
@@ -111,20 +96,31 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
         className={`absolute inset-0 bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 transition-opacity duration-500 ${isLoaded ? 'opacity-0' : 'opacity-100'
           }`}
       />
-      {media.type === 'image' ? (
+      {failedUrl === media.url ? (
+        <div className="flex h-full items-center justify-center px-6 text-center text-xs text-surface-400">
+          無法顯示縮圖，點擊查看檔案
+        </div>
+      ) : media.type === 'image' ? (
         <img
           src={media.url}
-          alt={media.key}
+          alt={getMediaName(media.key)}
           draggable={false}
+          loading="lazy"
+          decoding="async"
           className={`h-full w-full object-cover transition-[opacity,filter,transform] duration-500 ${isLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-80 blur-xl scale-105'
             }`}
           onLoad={handleReady}
-          onError={handleReady}
+          onError={() => { setFailedUrl(media.url); handleReady(); }}
         />
       ) : (
         <>
           {!isLoaded && <div className="absolute inset-0 backdrop-blur-sm transition-opacity duration-500" />}
-          <VideoPreview src={media.url} alt={media.key} onReady={handleReady} />
+          <VideoPreview key={media.url} src={media.url} alt={getMediaName(media.key)} onReady={handleReady} />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>
+            <span className="flex size-12 items-center justify-center rounded-full border border-white/20 bg-surface-950/60 text-white shadow-lg">
+              <svg className="size-6" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            </span>
+          </div>
         </>
       )}
       <MediaBadge type={media.type} />

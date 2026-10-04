@@ -23,6 +23,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest --config vitest.config.mts",
     "test:run": "vitest run --config vitest.config.mts",
+    "test:e2e": "playwright test",
+    "test:e2e:worker": "node scripts/test-worker.mjs",
     "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build && npm run build:worker"
   },
   "dependencies": {
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.62.5",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
@@ -47,7 +50,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@vitejs/plugin-rsc": "^0.5.35",
     "fast-glob": "file:./vendor/dynamic-import-glob",
-    "jsdom": "^30.1.1",
+    "jsdom": "^30.1.2",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

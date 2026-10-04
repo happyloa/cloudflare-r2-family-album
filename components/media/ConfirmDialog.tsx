@@ -72,7 +72,7 @@ export function ConfirmDialog({
     >
       <div
         ref={dialogRef}
-        className="w-[min(440px,92vw)] space-y-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
+        className="max-h-[calc(100dvh-2rem)] w-[min(440px,92vw)] space-y-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"

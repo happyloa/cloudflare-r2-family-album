@@ -2,6 +2,8 @@
 
 import type { FormEvent } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
+import { getMediaName } from '@/lib/media-name';
+import { isPeriodOnlyPathSegment } from '@/lib/path';
 
 import { useFocusTrap } from './hooks/useFocusTrap';
 
@@ -23,7 +25,7 @@ type AdminActionModalProps = {
     key: string;
     isFolder: boolean;
     newName?: string;
-  }) => void | Promise<void>;
+  }) => void | Promise<boolean>;
 };
 
 /**
@@ -43,7 +45,7 @@ export function AdminActionModal({
 
   const currentName = useMemo(() => {
     if (!target) return '';
-    return target.key.split('/').pop() ?? target.key;
+    return target.isFolder ? target.key.split('/').pop() ?? target.key : getMediaName(target.key);
   }, [target]);
 
   const { baseName, extension } = useMemo(() => {
@@ -102,11 +104,14 @@ export function AdminActionModal({
     if (target.isFolder && sanitized.length > maxNameLength) {
       return { errorMessage: `資料夾名稱最多 ${maxNameLength} 個字`, helperMessage: '', sanitizedName: sanitized };
     }
+    if (isPeriodOnlyPathSegment(sanitized) || (!target.isFolder && sanitized.length + extension.length > 255)) {
+      return { errorMessage: '請輸入有效的名稱，檔案名稱最多 255 個字元。', helperMessage: '', sanitizedName: sanitized };
+    }
     if (sanitized === baseName) {
       return { errorMessage: '名稱未變更', helperMessage: '', sanitizedName: sanitized };
     }
     return { errorMessage: '', helperMessage: '套用後名稱會自動移除特殊字元', sanitizedName: sanitized };
-  }, [target, inputValue, sanitizeName, maxNameLength, baseName]);
+  }, [target, inputValue, sanitizeName, maxNameLength, baseName, extension]);
 
   if (!isRename || !target) return null;
 
@@ -146,7 +151,7 @@ export function AdminActionModal({
       aria-busy={isSubmitting}
     >
       <div
-        className="w-[min(560px,92vw)] overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
+        className="max-h-[calc(100dvh-2rem)] w-[min(560px,92vw)] overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b border-surface-800 px-5 py-4">
@@ -154,7 +159,7 @@ export function AdminActionModal({
           <h3 id={titleId} className="mt-2 text-lg font-semibold text-white">
             重新命名
           </h3>
-          <p id={descriptionId} className="mt-1 text-sm text-surface-400">
+          <p id={descriptionId} className="mt-1 break-all text-sm text-surface-400">
             對象：{currentName || target.key}
           </p>
         </div>
@@ -181,7 +186,7 @@ export function AdminActionModal({
               placeholder="輸入新的檔案或資料夾名稱（支援表情符號）"
             />
             {finalName ? (
-              <p id={resultId} className="text-xs text-surface-500">
+              <p id={resultId} className="break-all text-xs text-surface-500">
                 完成後名稱：{finalName}
               </p>
             ) : null}

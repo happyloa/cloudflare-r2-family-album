@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MAX_BATCH_ITEMS } from '@/lib/constants';
 
 import { AdminActionTarget, AdminActionType } from "../AdminActionModal";
 import { MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from "../constants";
@@ -24,15 +25,18 @@ type UseMediaActionsProps = {
   removeLocalItems: (items: BatchItem[]) => void;
   upsertLocalItems: (items: { files?: MediaFile[]; folders?: FolderItem[]; prefix?: string }) => void;
   currentPrefix: string;
+  refreshUsage: (force?: boolean) => void | Promise<void>;
 };
 
-// R2 的 List 在寫入後可能有短暫延遲，操作後排程一次背景對帳以校正樂觀更新。
+// 操作後再載入清單，校正樂觀更新並取得最新物件資訊。
 const RECONCILE_DELAY_MS = 1500;
 
 // 依 HTTP 狀態碼給出更明確的失敗訊息；401 通常代表管理 session 已逾時。
-function describeActionFailure(status: number, fallback: string) {
-  if (status === 401) return "管理模式已逾時，請重新輸入密碼後再試一次。";
-  if (status === 429) return "操作過於頻繁，請稍後再試。";
+async function describeActionFailure(response: Response, fallback: string) {
+  if (response.status === 401) return "管理模式已逾時，請重新輸入密碼後再試一次。";
+  if (response.status === 429) return "操作過於頻繁，請稍後再試。";
+  const body = await response.json().catch(() => null) as { error?: unknown } | null;
+  if (typeof body?.error === 'string') return body.error;
   return fallback;
 }
 
@@ -92,16 +96,24 @@ export function useMediaActions({
   removeLocalItems,
   upsertLocalItems,
   currentPrefix,
+  refreshUsage,
 }: UseMediaActionsProps) {
   const [adminAction, setAdminAction] = useState<{
     action: AdminActionType;
     target: AdminActionTarget;
   } | null>(null);
 
+  const timersRef = useRef(new Set<number>());
+  useEffect(() => () => {
+    timersRef.current.forEach(timer => window.clearTimeout(timer));
+  }, []);
+
   const scheduleReconcile = (prefix = currentPrefix) => {
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      timersRef.current.delete(timer);
       void loadMedia(prefix, { silent: true });
     }, RECONCILE_DELAY_MS);
+    timersRef.current.add(timer);
   };
 
   // 建立新資料夾（回傳是否成功，供對話框決定是否關閉）
@@ -139,7 +151,7 @@ export function useMediaActions({
       });
 
       if (!response.ok) {
-        pushMessage(describeActionFailure(response.status, "建立資料夾失敗"), "error");
+        pushMessage(await describeActionFailure(response, "建立資料夾失敗"), "error");
         return false;
       }
 
@@ -180,10 +192,10 @@ export function useMediaActions({
     isFolder: boolean;
     newName?: string;
     targetPrefix?: string;
-  }) => {
+  }): Promise<boolean> => {
     // 重新命名
     if (payload.action === "rename") {
-      if (!payload.newName) return;
+      if (!payload.newName) return false;
       try {
         const response = await authorizedFetch("/api/media", {
           method: "PATCH",
@@ -197,9 +209,9 @@ export function useMediaActions({
         });
 
         if (!response.ok) {
-          pushMessage(describeActionFailure(response.status, "重新命名失敗，請稍後再試"), "error");
+          pushMessage(await describeActionFailure(response, "重新命名失敗，請稍後再試"), "error");
           await loadMedia(currentPrefix, { silent: true });
-          return;
+          return false;
         }
 
         // 重新命名會同時改變檔案 key 與公開 URL。維持對話框的 submitting 狀態，
@@ -215,7 +227,7 @@ export function useMediaActions({
         if (!confirmedRename) {
           pushMessage("重新命名完成，但伺服器回傳資料不完整；已重新整理清單。", "info");
           scheduleReconcile();
-          return;
+          return true;
         }
 
         const adjustedName = confirmedRename.name !== payload.newName;
@@ -224,21 +236,22 @@ export function useMediaActions({
           "success",
         );
         scheduleReconcile();
+        return true;
       } catch {
         pushMessage("重新命名時發生錯誤，請稍後再試。", "error");
         await loadMedia(currentPrefix, { silent: true });
       }
-      return;
+      return false;
     }
 
     // 移動（項目離開目前資料夾，樂觀移除）
     if (payload.action === "move") {
-      if (payload.targetPrefix === undefined) return;
+      if (payload.targetPrefix === undefined) return false;
       const targetPrefix = normalizePrefix(payload.targetPrefix);
       if (isAlreadyInTargetParent({ key: payload.key, isFolder: payload.isFolder }, targetPrefix)) {
         setAdminAction(null);
         pushMessage(payload.isFolder ? "資料夾已在目標位置，未移動。" : "媒體已在目標資料夾，未移動。", "info");
-        return;
+        return true;
       }
 
       removeLocalItems([{ key: payload.key, isFolder: payload.isFolder }]);
@@ -256,24 +269,30 @@ export function useMediaActions({
         });
 
         if (!response.ok) {
-          pushMessage(describeActionFailure(response.status, "移動失敗，請稍後再試"), "error");
+          pushMessage(await describeActionFailure(response, "移動失敗，請稍後再試"), "error");
           await loadMedia(currentPrefix, { silent: true });
-          return;
+          return false;
         }
 
         pushMessage("已移動完成", "success");
         scheduleReconcile();
+        return true;
       } catch {
         pushMessage("移動時發生錯誤，請稍後再試。", "error");
         await loadMedia(currentPrefix, { silent: true });
       }
     }
     // 刪除已改走 MediaGrid 的 Undo 流程（commitDeleteOnServer），此處不再處理
+    return false;
   };
 
   // 批次移動
-  const handleBatchMove = async (items: BatchItem[], targetPrefix: string) => {
-    if (items.length === 0) return;
+  const handleBatchMove = async (items: BatchItem[], targetPrefix: string): Promise<boolean> => {
+    if (items.length === 0) return false;
+    if (items.length > MAX_BATCH_ITEMS) {
+      pushMessage(`每批最多移動 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
+      return false;
+    }
     const normalizedTargetPrefix = normalizePrefix(targetPrefix);
     const movableItems = items.filter(
       (item) => !isAlreadyInTargetParent(item, normalizedTargetPrefix),
@@ -282,7 +301,7 @@ export function useMediaActions({
 
     if (movableItems.length === 0) {
       pushMessage("所選項目都已在目標資料夾，未移動。", "info");
-      return;
+      return true;
     }
 
     // 只移除真的會離開目前資料夾的項目；同資料夾 no-op 必須留在畫面上。
@@ -298,9 +317,9 @@ export function useMediaActions({
         }),
       });
       if (!response.ok) {
-        pushMessage(describeActionFailure(response.status, "批次移動失敗，請稍後再試"), "error");
+        pushMessage(await describeActionFailure(response, "批次移動失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
-        return;
+        return false;
       }
       pushMessage(
         skippedCount > 0
@@ -309,10 +328,12 @@ export function useMediaActions({
         skippedCount > 0 ? "info" : "success",
       );
       scheduleReconcile();
+      return true;
     } catch {
       pushMessage("批次移動時發生錯誤，請稍後再試。", "error");
       await loadMedia(currentPrefix, { silent: true });
     }
+    return false;
   };
 
   // 把刪除送到伺服器（樂觀移除與 Undo 由呼叫端負責，這裡不再動本地清單或顯示成功訊息）
@@ -325,10 +346,11 @@ export function useMediaActions({
         body: JSON.stringify({ action: "batch-delete", items }),
       });
       if (!response.ok) {
-        pushMessage(describeActionFailure(response.status, "刪除失敗，請稍後再試"), "error");
+        pushMessage(await describeActionFailure(response, "刪除失敗，請稍後再試"), "error");
         await loadMedia(currentPrefix, { silent: true });
         return;
       }
+      void refreshUsage(true);
       scheduleReconcile();
     } catch {
       pushMessage("刪除時發生錯誤，請稍後再試。", "error");

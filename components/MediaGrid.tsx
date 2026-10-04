@@ -24,6 +24,7 @@ import { useMessage } from './media/hooks/useMessage';
 import { makeSelectionId, useSelection } from './media/hooks/useSelection';
 import { useUndoableDelete } from './media/hooks/useUndoableDelete';
 import { MediaPreviewModal } from './media/MediaPreviewModal';
+import { MediaControls } from './media/MediaControls';
 import { MediaSection } from './media/MediaSection';
 import { MediaSkeleton } from './media/MediaSkeleton';
 import { MessageToast } from './media/MessageToast';
@@ -101,7 +102,8 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     loadMedia,
     removeLocalItems,
     upsertLocalItems,
-    currentPrefix
+    currentPrefix,
+    refreshUsage: usage.refresh
   });
 
   const { isDragging, handleItemDragStart, handleItemDragEnd, moveDraggedItemTo } = useMediaDragDrop({
@@ -127,6 +129,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     currentPrefix,
     adminTokenRef,
     requestAdminToken,
+    clearAdminSession,
     pushMessage,
     confirm,
     usageBytes: usage.usageBytes,
@@ -145,6 +148,14 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     loadMedia,
     onDeleted: selection.clear
   });
+
+  // 背景對帳或返回資料夾時，仍在復原期間的項目不可重新出現在清單。
+  useEffect(() => {
+    if (!pendingDelete || pendingDelete.prefix !== currentPrefix) return;
+    if (pendingDelete.items.some(item => (item.isFolder ? folders : files).some(entry => entry.key === item.key))) {
+      removeLocalItems(pendingDelete.items);
+    }
+  }, [pendingDelete, currentPrefix, files, folders, removeLocalItems]);
 
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
   const [moveItems, setMoveItems] = useState<{ key: string; isFolder: boolean }[] | null>(null);
@@ -207,18 +218,19 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       return;
     }
 
+    let succeeded = false;
     if (items.length === 1) {
-      await handleAdminActionConfirm({
+      succeeded = await handleAdminActionConfirm({
         action: 'move',
         key: items[0].key,
         isFolder: items[0].isFolder,
         targetPrefix
       });
     } else if (items.length > 1) {
-      selection.clear();
-      await handleBatchMove(items, targetPrefix);
+      succeeded = await handleBatchMove(items, targetPrefix);
+      if (succeeded) selection.clear();
     }
-    setMoveItems(null);
+    if (succeeded) setMoveItems(null);
   };
 
   // 右鍵 / 溢位選單：開啟（資料夾進入、檔案預覽）
@@ -318,6 +330,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
         usageLoading={usage.loading}
         usageError={usage.error}
         uploading={dropUploading}
+        canCreateFolder={depth < MAX_FOLDER_DEPTH}
         onEnableAdmin={() => void requestAdminToken('請輸入管理密碼以啟用管理模式')}
         onExitAdmin={handleClearAdminToken}
         onPickUpload={() => uploadInputRef.current?.click()}
@@ -399,15 +412,31 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
 
           {hasSearchQuery && hasItems && !hasSearchResults ? (
             <div className="rounded-2xl border border-surface-700/50 bg-surface-800/50 px-4 py-3 text-sm text-surface-200" role="status">
-              找不到符合「{searchQuery.trim()}」的資料夾或媒體檔。
+              {hasMore ? '目前已載入的項目沒有符合結果，仍在搜尋剩餘項目。' : `找不到符合「${searchQuery.trim()}」的資料夾或媒體檔。`}
             </div>
           ) : null}
+
+          <MediaControls
+            filter={filter}
+            filterVisible={filterVisible}
+            onFilterChange={(value) => setFilter(value)}
+            searchEnabled={searchEnabled}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSortKeyChange={setSortKey}
+            onSortDirToggle={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+          />
 
           <FolderGrid
             folders={filteredFolders}
             isAdmin={isAdmin}
             onEnter={handleEnterFolder}
             isRootLevel={currentPrefix === ''}
+            searching={hasSearchQuery}
             isDragging={isAdmin ? isDragging : false}
             onDropItem={(targetKey) => void moveDraggedItemTo(targetKey)}
             onItemDragStart={(folderKey, event) => {
@@ -435,14 +464,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
             filterLabel={filterLabel}
             filter={filter}
             filterVisible={filterVisible}
-            onFilterChange={(value) => setFilter(value)}
-            searchEnabled={searchEnabled}
             searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onSortKeyChange={setSortKey}
-            onSortDirToggle={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
             isAdmin={isAdmin}
             isSelected={selection.isSelected}
             selectionMode={selection.selectionMode}

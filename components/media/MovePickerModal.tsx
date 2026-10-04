@@ -267,7 +267,7 @@ export function MovePickerModal({
   const targetTooDeep = movingFolder ? browseDepth + 1 > maxDepth : browseDepth > maxDepth;
   const targetIsSource = isSourceOrDescendant(browsePrefix);
   const confirmDisabled = submitting || loading || Boolean(loadError) || targetTooDeep || targetIsSource;
-  const canEnter = (folderKey: string) => !isSourceOrDescendant(folderKey) && getDepth(folderKey) < maxDepth;
+  const canEnter = (folderKey: string) => !isSourceOrDescendant(folderKey) && getDepth(folderKey) <= (movingFolder ? maxDepth - 1 : maxDepth);
 
   const handleConfirm = async () => {
     if (confirmDisabled) return;
@@ -295,7 +295,7 @@ export function MovePickerModal({
     >
       <div
         ref={dialogRef}
-        className="flex w-[min(480px,92vw)] flex-col gap-4 overflow-hidden rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
+        className="flex max-h-[calc(100dvh-2rem)] w-[min(480px,92vw)] flex-col gap-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="space-y-1">
@@ -403,7 +403,7 @@ export function MovePickerModal({
         </div>
 
         <div className="space-y-1">
-          <p className="text-xs text-surface-500">
+          <p className="break-all text-xs text-surface-500">
             目的地：<span className="font-semibold text-surface-300">{browsePrefix || '根目錄'}</span>
           </p>
           {targetTooDeep ? <p className="text-sm font-semibold text-red-300">移動後會超過 {maxDepth} 層</p> : null}

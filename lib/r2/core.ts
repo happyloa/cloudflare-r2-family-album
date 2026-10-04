@@ -36,6 +36,12 @@ export type BucketUsage = {
   totalBytes: number;
 };
 
+export class R2ActionError extends Error {
+  constructor(message: string, public readonly status = 400) {
+    super(message);
+  }
+}
+
 const processEnv = typeof process !== "undefined" ? process.env : undefined;
 
 // 環境變數快取
@@ -436,5 +442,11 @@ export async function copyObjectWithinBucket(sourceKey: string, targetKey: strin
     throw new Error(
       `Failed to copy object: ${copyResponse.status} ${copyResponse.statusText}`,
     );
+  }
+
+  // S3 CopyObject 可把錯誤放在 HTTP 200 的 XML 中；確認結果後才能刪除來源。
+  const result = xmlParser.parse(await copyResponse.text());
+  if (result.Error || !result.CopyObjectResult?.ETag) {
+    throw new Error("R2 did not confirm the object copy");
   }
 }

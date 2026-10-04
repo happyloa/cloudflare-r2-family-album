@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getMediaName } from '@/lib/media-name';
 
 import { sanitizePath } from '../sanitize';
 import { FolderItem, MediaFile, MediaResponse, MessageTone } from '../types';
@@ -72,6 +73,7 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [paginationError, setPaginationError] = useState(false);
 
   // 隨時反映最新的 currentPrefix，供非同步的 loadMedia 判斷回應是否已經過期
   // （例如改名/移動/刪除後排程的背景對帳，若使用者在等待期間切換了資料夾，就不該套用）。
@@ -267,10 +269,8 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
     []
   );
 
-  const hasImages = useMemo(() => files.some((file) => file.type === 'image'), [files]);
-  const hasVideos = useMemo(() => files.some((file) => file.type === 'video'), [files]);
-  const filterVisible = hasImages && hasVideos;
-  const searchEnabled = files.length > 0 || folders.length > 0;
+  const filterVisible = files.length > 0 || nextCursor !== null;
+  const searchEnabled = files.length > 0 || folders.length > 0 || nextCursor !== null;
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   // 若目前過濾選項隱藏，自動重設為 "all"
@@ -287,7 +287,7 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
     }
   }, [searchEnabled, searchQuery]);
 
-  const fileName = (file: MediaFile) => file.key.split('/').pop() ?? '';
+  const fileName = (file: MediaFile) => getMediaName(file.key);
 
   // 計算過濾與搜尋後的檔案列表
   const filteredFiles = useMemo(() => {
@@ -348,6 +348,7 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
     requestControllerRef.current = controller;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    setPaginationError(false);
 
     const timeoutId = controller ? window.setTimeout(() => controller.abort(), 10000) : null;
     const params = new URLSearchParams({
@@ -373,12 +374,18 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
           ? '請稍後再試，系統暫時忙碌。'
           : '無法載入更多媒體，請稍後再試。';
         pushMessage(content, 'error');
+        setPaginationError(true);
         return;
       }
 
       const data: MediaResponse = await response.json();
       if (requestSequence !== requestSequenceRef.current || prefix !== currentPrefixRef.current) return;
       const nextPageCursor = data.nextCursor ?? null;
+      if (nextPageCursor === cursor) {
+        setPaginationError(true);
+        pushMessage('伺服器回傳重複分頁，請重新整理後再試。', 'error');
+        return;
+      }
       setFiles((current) => mergeItemsByKey(current, data.files));
       setFolders((current) => mergeItemsByKey(current, data.folders));
       nextCursorRef.current = nextPageCursor;
@@ -388,9 +395,8 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
         requestSequence !== requestSequenceRef.current ||
         prefix !== currentPrefixRef.current
       ) return;
-      if ((error as { name?: string }).name !== 'AbortError') {
-        pushMessage('載入更多媒體時發生錯誤，請稍後再試。', 'error');
-      }
+      setPaginationError(true);
+      pushMessage('載入更多媒體時發生錯誤或逾時，請再試一次。', 'error');
     } finally {
       if (timeoutId) {
         window.clearTimeout(timeoutId);
@@ -406,6 +412,15 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
       setLoadingMore(false);
     }
   }, [pushMessage]);
+
+  useEffect(() => { setPaginationError(false); }, [currentPrefix, searchQuery, filter]);
+
+  // 搜尋或切換類型時補齊目前資料夾的分頁，避免把未載入項目誤報為沒有結果。
+  useEffect(() => {
+    if ((!searchQuery.trim() && filter === 'all') || !hasMore || loading || loadingMore || paginationError) return;
+    const timer = window.setTimeout(() => void loadMore(), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, filter, hasMore, loading, loadingMore, paginationError, loadMore, nextCursor]);
 
   // Server cursor pagination appends each loaded page to the local listing.
 

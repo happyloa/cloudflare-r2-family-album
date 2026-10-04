@@ -1,17 +1,17 @@
 import type { Metadata } from 'next';
 // 將繁中字型隨靜態資產部署，避免 Vinext/Workers 建置時依賴 Google Fonts 網路請求。
-import '@fontsource/noto-sans-tc/chinese-traditional-400.css';
-import '@fontsource/noto-sans-tc/chinese-traditional-500.css';
-import '@fontsource/noto-sans-tc/chinese-traditional-600.css';
-import '@fontsource/noto-sans-tc/chinese-traditional-700.css';
+import '@fontsource/noto-sans-tc/400.css';
+import '@fontsource/noto-sans-tc/500.css';
+import '@fontsource/noto-sans-tc/600.css';
+import '@fontsource/noto-sans-tc/700.css';
 import './globals.css';
 
 // 設定 Metadata，包含 SEO 與爬蟲設定
 export const metadata: Metadata = {
   title: '我們這一家',
-  description: '為家人打造的私密相簿，重溫每一趟旅程的回憶。',
+  description: '我們的家庭相簿，收藏每一趟旅程的回憶。',
   robots: {
-    // 禁止搜尋引擎索引與追蹤，確保隱私
+    // 請搜尋引擎不要索引；瀏覽仍為公開，robots 不是存取控制。
     index: false,
     follow: false,
     nocache: true,

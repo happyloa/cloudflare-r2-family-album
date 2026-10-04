@@ -17,6 +17,7 @@ export function FolderGrid({
   isAdmin,
   onEnter,
   isRootLevel = true,
+  searching = false,
   isDragging,
   onDropItem,
   onItemDragStart,
@@ -31,6 +32,7 @@ export function FolderGrid({
   isAdmin: boolean;
   onEnter: (key: string) => void;
   isRootLevel?: boolean;
+  searching?: boolean;
   isDragging?: boolean;
   onDropItem?: (folderKey: string) => void;
   onItemDragStart?: (folderKey: string, event: DragEvent<HTMLElement>) => void;
@@ -79,9 +81,9 @@ export function FolderGrid({
 
   if (!folders.length) return null;
 
-  // 預設只展開第一組（最新年份），其餘收合
+  // 搜尋時顯示所有符合的群組，不更動原本的收合偏好。
   const isGroupExpanded = (year: string, _index: number) =>
-    collapsedGroups[year] !== undefined ? !collapsedGroups[year] : true;
+    searching || (collapsedGroups[year] !== undefined ? !collapsedGroups[year] : true);
   const toggleGroup = (year: string, index: number) =>
     setCollapsedGroups((prev) => ({ ...prev, [year]: isGroupExpanded(year, index) }));
 
@@ -173,7 +175,7 @@ export function FolderGrid({
           type="button"
           onClick={(event) => handleCardClick(folder, event)}
           onKeyDown={(event) => handleCardKeyDown(folder, event)}
-          className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl p-4 text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-400/70"
+          className={`flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl p-4 text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-400/70 ${isAdmin ? 'pr-12' : ''}`}
           aria-label={
             isDragging
               ? `將項目移動到 ${folder.name || '未命名'} 資料夾`
@@ -202,7 +204,7 @@ export function FolderGrid({
             className={`absolute left-2.5 top-2.5 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all duration-150 cursor-pointer focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 ${
               selected
                 ? 'border-primary-400 bg-primary-500 text-surface-950'
-                : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
+                : `border-white/70 bg-surface-900/60 text-transparent [@media(hover:none)]:opacity-100 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
             }`}
             aria-label={selected ? '取消選取' : '選取'}
             aria-pressed={selected}
@@ -244,7 +246,7 @@ export function FolderGrid({
             {folders.length} 個
           </span>
         </div>
-        {isRootLevel && sortedYears.length > 1 ? (
+        {isRootLevel && sortedYears.length > 1 && !searching ? (
           <button
             type="button"
             onClick={toggleAll}
@@ -267,6 +269,8 @@ export function FolderGrid({
                 <button
                   type="button"
                   onClick={() => toggleGroup(year, index)}
+                  aria-expanded={expanded}
+                  disabled={searching}
                   className="flex w-full items-center justify-between rounded-xl bg-surface-800/40 px-4 py-3 text-left transition-colors hover:bg-surface-800/70 focus:outline-none focus:ring-2 focus:ring-primary-500/40 cursor-pointer"
                 >
                   <div className="flex items-center gap-3">
