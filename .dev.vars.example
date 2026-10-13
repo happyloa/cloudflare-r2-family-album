@@ -10,4 +10,5 @@ ADMIN_ACCESS_TOKEN=your_admin_password
 # ADMIN_RATE_LIMIT_MAX_FAILURES=5
 # MAX_IMAGE_SIZE_MB=10
 # MAX_VIDEO_SIZE_MB=32
+# TRASH_RETENTION_DAYS=15
 # Fixed upload limits: at most 20 files and 32 MB total per request.

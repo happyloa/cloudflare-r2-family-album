@@ -1,6 +1,6 @@
 # Family Album
 
-公開瀏覽、密碼管理的家庭相簿，支援資料夾、預覽、上傳、重新命名、移動與刪除。知道網址的人可以讀取清單與媒體，管理 API 需提供 `x-admin-token`。
+公開瀏覽、密碼管理的家庭相簿，支援資料夾、預覽、上傳、重新命名、移動與垃圾桶。知道網址的人可以讀取清單與媒體，管理 API 需提供 `x-admin-token`。
 
 使用 React、Vinext、Vite 與 Cloudflare Workers，透過 S3 API 存取 R2。`app/` 與 `next/*` 保留相容 API，專案未安裝 `next`。介面採深色攝影集版面、Tailwind CSS 與思源黑體（Noto Sans TC），字型隨網站部署。
 
@@ -32,6 +32,7 @@ npm run dev
 | `ADMIN_RATE_LIMIT_MAX_FAILURES` | 單一 IP 在 5 分鐘內的驗證失敗上限，預設 5 次 |
 | `MAX_IMAGE_SIZE_MB` | 圖片單檔上限，預設 10、最高 32 |
 | `MAX_VIDEO_SIZE_MB` | 影片單檔上限，預設與最高皆為 32 |
+| `TRASH_RETENTION_DAYS` | 垃圾桶保留天數，預設 15；可設 1–365，只套用到之後移入的媒體 |
 
 上傳限制由伺服器解析，管理介面透過受保護的 `GET /api/upload` 取得。`NEXT_PUBLIC_MAX_*` 已不使用。
 
@@ -43,7 +44,7 @@ npm run dev
 | `npm run build` | 建置 Worker |
 | `npm run start` | 本機預覽已建置 Worker |
 | `npm run typecheck` | Vinext 路由型別與 TypeScript 檢查 |
-| `npm run verify` | Worker 型別、相容性、型別、回歸測試與建置 |
+| `npm run verify` | Worker 型別、相容性、型別、回歸測試、建置與隔離排程測試 |
 | `npm run test:e2e` | 開發模式桌面／手機隔離測試 |
 | `npm run test:e2e:worker` | 已建置 Worker 的桌面／手機隔離測試 |
 | `npm run deploy:dry-run` | 建置並檢查部署配置、Wrangler 打包，不發佈 |
@@ -73,12 +74,20 @@ GitHub Verify 在推送 `main`、Pull Request 與手動觸發時執行，不負�
 
 專案仍使用 `wrangler.jsonc`，帳號與資源管理優先使用 `cf`。若要統一 CLI，另行以 `cf migrate --dry-run` 開始完整遷移。
 
+## 垃圾桶
+
+管理模式右下角的垃圾桶可查看、預覽、還原或永久刪除媒體。媒體移入後從當下起算保留天數；還原回原位置，遇到同名項目會拒絕覆寫。永久刪除需確認，完成後無法復原。介面批次操作會分成每次最多 10 項的請求，避免觸及 Workers Free 的外部請求限制。
+
+`worker.ts` 的排程每小時清理到期項目，每次最多讀 5 頁、每頁 100 筆；積壓或執行失敗時延後至下一次成功清理。排程由正式部署套用 `wrangler.jsonc` 的 `0 * * * *`。分支的版本預覽不會套用正式排程。
+
+垃圾桶使用同一個 bucket 的保留路徑 `.family-album-trash/`，一般相簿 API 不會顯示或接受此路徑；`/api/trash` 需管理驗證。bucket 的公開媒體網址與快取仍不屬於存取控制。保留的媒體仍計入容量，複製及列表也計入 R2 操作用量，不能保證零費用。測試以模擬 S3 攔截請求，不改動正式物件或 bucket 生命週期設定。
+
 ## 使用限制
 
 - 每批最多 20 個檔案、共 32 MiB；介面以 MB 標示。支援 JPEG、PNG、WebP、GIF、AVIF、HEIC／HEIF、MP4、WebM、QuickTime，會驗證 MIME type 與檔案 signature。
 - 瀏覽器只嘗試壓縮 JPEG，結果較大時保留原檔；其他格式保留原檔及動畫。HEIC／HEIF、QuickTime 的預覽取決於瀏覽器，失敗時可另開檔案。
 - 資料夾最多兩層；批次移動／刪除最多 200 項，管理 API 的 JSON body 上限為 256 KiB。
-- 刪除確認後可在六秒內復原，離開或重新整理會取消尚未送出的刪除。送到伺服器後無法復原。刪除資料夾會把內容上移一層，檔案才會被刪除。
+- 刪除確認後可在六秒內取消，離開或重新整理會取消尚未送出的操作。媒體送到伺服器後移入垃圾桶，保留期內可還原；刪除資料夾仍會把內容上移一層，不把內容移入垃圾桶。
 - 10 GB 容量條只是前端提醒，並非伺服器配額或零費用保證。密碼限速未跨 Worker isolate 共用，R2 批次操作也不是交易，失敗時可能已有部分項目完成。
 
 `package.json` 保留 `postcss`、`satori/fflate` 與 `vendor/dynamic-import-glob` 的安全覆寫，移除前需確認上游修補並通過完整驗證。參考：[braces 漏洞公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)、[tinyglobby 遷移指引](https://superchupu.dev/tinyglobby/migration)、[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。
