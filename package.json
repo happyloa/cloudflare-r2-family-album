@@ -25,7 +25,8 @@
     "test:run": "vitest run --config vitest.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:worker": "node scripts/test-worker.mjs",
-    "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build"
+    "test:trash:worker": "node scripts/test-trash-worker.mjs",
+    "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build && npm run test:trash:worker"
   },
   "dependencies": {
     "@fontsource/noto-sans-tc": "^5.3.1",

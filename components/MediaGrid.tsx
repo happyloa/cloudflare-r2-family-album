@@ -34,6 +34,7 @@ import { NewFolderModal } from './media/NewFolderModal';
 import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
 import { Toolbar } from './media/Toolbar';
+import { TrashPanel } from './media/TrashPanel';
 import { UndoToast } from './media/UndoToast';
 import { getDepth } from '@/lib/path';
 import { MediaFile } from './media/types';
@@ -87,6 +88,10 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     openPassword
   });
   const usage = useBucketUsage(isAdmin, authorizedFetch);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashRevision, setTrashRevision] = useState(0);
+  const refreshTrash = () => { setTrashRevision(value => value + 1); void loadMedia(currentPrefix, { silent: true }); void usage.refresh(true); };
+  useEffect(() => { if (!isAdmin) setTrashOpen(false); }, [isAdmin]);
 
   const {
     handleCreateFolder,
@@ -104,7 +109,8 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     removeLocalItems,
     upsertLocalItems,
     currentPrefix,
-    refreshUsage: usage.refresh
+    refreshUsage: usage.refresh,
+    onTrashChanged: () => setTrashRevision(value => value + 1),
   });
 
   const { isDragging, handleItemDragStart, handleItemDragEnd, moveDraggedItemTo } = useMediaDragDrop({
@@ -269,6 +275,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     Boolean(renameTarget) ||
     Boolean(moveItems) ||
     newFolderOpen ||
+    trashOpen ||
     Boolean(passwordReq) ||
     Boolean(confirmReq) ||
     menu.open;
@@ -315,6 +322,16 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   return (
     <section className="relative space-y-6" aria-busy={loading}>
       <MessageToast message={message} tone={messageTone} />
+      {isAdmin ? (
+        <>
+          <button type="button" onClick={() => setTrashOpen(true)} aria-label="開啟垃圾桶" title="垃圾桶"
+            className="fixed right-5 z-40 flex size-14 items-center justify-center rounded-full border border-surface-600 bg-surface-900 text-primary-200 shadow-lg transition-colors hover:border-primary-400 hover:bg-surface-800"
+            style={{ bottom: `calc(${selection.selectedCount || pendingDelete ? '7rem' : '1.5rem'} + env(safe-area-inset-bottom, 0px))` }}>
+            <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <TrashPanel open={trashOpen} revision={trashRevision} authorizedFetch={authorizedFetch} onClose={() => setTrashOpen(false)} onChanged={refreshTrash} confirm={confirm} />
+        </>
+      ) : null}
 
       <Toolbar
         isAdmin={isAdmin}

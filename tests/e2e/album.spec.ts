@@ -9,6 +9,7 @@ async function fixture(page: Page, paginated = false) {
   const files = new Map(['photo.jpg', 'unsupported.heic', 'video.mp4'].map(key => [key, photo(key)]));
   if (paginated) for (let index = 0; index < 52; index++) files.set(`extra-${index}.jpg`, photo(`extra-${index}.jpg`));
   const mutations: string[] = [];
+  const trash = new Map<string, ReturnType<typeof photo> & { originalKey: string; trashedAt: string; expiresAt: string }>();
   let failMove = false;
   await page.route('**/test-media/**', async route => {
     if (/heic/.test(route.request().url())) return route.fulfill({ status: 404 });
@@ -38,6 +39,24 @@ async function fixture(page: Page, paginated = false) {
     if (body.action === 'validate') return route.continue();
     if (request.headers()['x-admin-token'] !== password) return json({ error: '未授權' }, 401);
     if (url.pathname === '/api/media/usage') return json({ totalBytes: [...files.values()].reduce((sum, item) => sum + item.size, 0) });
+    if (url.pathname === '/api/trash') {
+      if (method === 'GET') {
+        const offset = Number(url.searchParams.get('cursor') ?? 0);
+        const entries = [...trash.values()];
+        return json({ files: entries.slice(offset, offset + 4), nextCursor: offset + 4 < entries.length ? String(offset + 4) : null, retentionDays: 15 });
+      }
+      const completedKeys: string[] = [];
+      const failures: { key: string; error: string }[] = [];
+      if (body.keys.length > 10) return json({ error: '每次最多 10 項' }, 400);
+      for (const key of body.keys) {
+        const item = trash.get(key);
+        if (body.action === 'restore' && item && files.has(item.originalKey)) { failures.push({ key, error: '原位置已有同名項目' }); continue; }
+        if (body.action === 'restore' && item) files.set(item.originalKey, photo(item.originalKey));
+        trash.delete(key); completedKeys.push(key);
+      }
+      mutations.push(`trash-${body.action}`);
+      return json({ completedKeys, failures });
+    }
     if (url.pathname === '/api/upload') {
       mutations.push('upload'); files.set('uploaded.png', photo('uploaded.png'));
       return json({ media: [files.get('uploaded.png')], failures: [] });
@@ -63,12 +82,23 @@ async function fixture(page: Page, paginated = false) {
       return json({ ok: true });
     }
     if (body.action === 'batch-delete') {
-      for (const item of body.items) { if (item.isFolder) folders.delete(item.key); else files.delete(item.key); }
+      for (const item of body.items) {
+        if (item.isFolder) folders.delete(item.key);
+        else {
+          const media = files.get(item.key);
+          if (media) {
+            const now = Date.now();
+            const key = `.family-album-trash/${now + 15 * 86400000}/${now}-01234567-1234-4234-8234-012345678901/${item.key}`;
+            trash.set(key, { ...media, key, originalKey: item.key, trashedAt: new Date(now).toISOString(), expiresAt: new Date(now + 15 * 86400000).toISOString() });
+          }
+          files.delete(item.key);
+        }
+      }
       return json({ ok: true });
     }
     throw new Error(`Unmocked test API operation: ${method} ${url.pathname}`);
   });
-  return { mutations, files, folders, failNextMove: () => { failMove = true; } };
+  return { mutations, files, folders, trash, failNextMove: () => { failMove = true; } };
 }
 
 async function login(page: Page) {
@@ -111,7 +141,7 @@ test('server protects management APIs and exposes the isolated upload policy', a
   expect(await policy.json()).toEqual({ limits: { maxFileCount: 20, maxTotalSizeMB: 32, maxImageSizeMB: 10, maxVideoSizeMB: 32 } });
 
   for (const [method, path] of [
-    ['GET', '/api/upload'], ['GET', '/api/media/usage'],
+    ['GET', '/api/upload'], ['GET', '/api/media/usage'], ['GET', '/api/trash'], ['POST', '/api/trash'],
     ['POST', '/api/media'], ['PATCH', '/api/media'], ['DELETE', '/api/media'],
     ['POST', '/api/upload'],
   ]) {
@@ -121,6 +151,8 @@ test('server protects management APIs and exposes the isolated upload policy', a
   }
   expect((await authorize()).status()).toBe(200);
   expect((await request.get('/api/media?limit=0')).status()).toBe(400);
+  expect((await request.post('/api/trash', { headers: { 'x-admin-token': password }, data: { action: 'delete', keys: ['photo.jpg'] } })).status()).toBe(400);
+  expect((await request.get(`/api/trash?cursor=${'x'.repeat(2049)}`, { headers: { 'x-admin-token': password } })).status()).toBe(400);
 });
 
 test('public browsing, folder history, preview, keyboard navigation and responsive layout', async ({ page }, testInfo) => {
@@ -346,4 +378,62 @@ test('upload and delete undo preserve confirmed results', async ({ page }) => {
   await page.getByRole('button', { name: '確定', exact: true }).click();
   await expect.poll(() => state.mutations.includes('batch-delete'), { timeout: 10000 }).toBe(true);
   expect(state.files.has('uploaded.png')).toBe(false);
+  expect([...state.trash.values()].some(item => item.originalKey === 'uploaded.png')).toBe(true);
+});
+
+test('trash appears only in management mode, previews media and restores safely', async ({ page }, testInfo) => {
+  const state = await fixture(page); await page.goto('/');
+  await expect(page.getByRole('button', { name: '開啟垃圾桶' })).toHaveCount(0);
+  await login(page);
+  await more(page, 'photo.jpg'); await page.getByRole('menuitem', { name: /刪除$/ }).click();
+  await page.getByRole('button', { name: '確定', exact: true }).click();
+  await expect.poll(() => state.trash.size, { timeout: 10000 }).toBe(1);
+  await page.getByRole('button', { name: '開啟垃圾桶' }).click();
+  const panel = page.getByRole('dialog', { name: '垃圾桶', exact: true });
+  await expect(panel).toBeVisible(); await expect(panel).toContainText('保留 15 天');
+  await panel.getByRole('button', { name: '預覽垃圾桶媒體 photo.jpg' }).click();
+  const preview = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: '關閉', exact: true }) });
+  await expect(preview).toBeVisible();
+  await preview.getByRole('button', { name: '關閉', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '預覽垃圾桶媒體 photo.jpg' })).toBeFocused();
+  await page.screenshot({ path: `.cache/${testInfo.project.name}-trash.png` });
+  await panel.getByRole('checkbox', { name: '選取垃圾桶媒體 photo.jpg' }).check();
+  state.files.set('photo.jpg', photo('photo.jpg'));
+  await panel.getByRole('button', { name: '還原', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('同名'); expect(state.trash.size).toBe(1);
+  state.files.delete('photo.jpg');
+  await panel.getByRole('button', { name: '還原', exact: true }).click();
+  await expect(panel).toContainText('垃圾桶是空的'); expect(state.files.has('photo.jpg')).toBe(true);
+  await panel.getByRole('button', { name: '關閉垃圾桶' }).click();
+  await expect(page.getByRole('button', { name: '開啟垃圾桶' })).toBeFocused();
+  await page.getByRole('button', { name: '退出管理' }).click();
+  await expect(page.getByRole('button', { name: '開啟垃圾桶' })).toHaveCount(0);
+});
+
+test('trash paginates and permanent deletion requires confirmation', async ({ page }, testInfo) => {
+  const state = await fixture(page);
+  const now = Date.now();
+  for (let index = 0; index < 17; index++) {
+    const originalKey = `long-${index}-${'旅行'.repeat(40)}.jpg`;
+    const key = `.family-album-trash/${now + 15 * 86400000}/${now}-01234567-1234-4234-8234-012345678901/${originalKey}`;
+    state.trash.set(key, { ...photo(originalKey), key, originalKey, trashedAt: new Date(now).toISOString(), expiresAt: new Date(now + 15 * 86400000).toISOString() });
+  }
+  await page.goto('/'); await login(page); await page.setViewportSize({ width: 320, height: 640 });
+  await page.getByRole('button', { name: '開啟垃圾桶' }).click();
+  const panel = page.getByRole('dialog', { name: '垃圾桶', exact: true });
+  await expect(panel.getByRole('checkbox')).toHaveCount(4);
+  for (let pageIndex = 0; pageIndex < 4; pageIndex++) await panel.getByRole('button', { name: '載入更多垃圾桶媒體' }).click();
+  await expect(panel.getByRole('checkbox')).toHaveCount(17);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await panel.getByRole('button', { name: '全選', exact: true }).click();
+  await panel.getByRole('button', { name: '永久刪除', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '永久刪除', exact: true });
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click(); expect(state.trash.size).toBe(17);
+  await panel.getByRole('button', { name: '永久刪除', exact: true }).click();
+  await page.getByRole('dialog', { name: '永久刪除', exact: true }).getByRole('button', { name: '永久刪除', exact: true }).click();
+  await expect(panel).toContainText('垃圾桶是空的'); expect(state.trash.size).toBe(0);
+  expect(state.mutations.filter(action => action === 'trash-delete')).toHaveLength(2);
+  await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+  await page.screenshot({ path: `.cache/${testInfo.project.name}-trash-narrow.png` });
 });

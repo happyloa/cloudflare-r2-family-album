@@ -11,6 +11,8 @@ import {
   parseListResult,
   signedFetch,
 } from "./core";
+import { isTrashPath } from '../trash-policy';
+import { R2ActionError } from './core';
 
 // R2 容量統計記憶體快取（注意：edge 環境每個 isolate 各一份，僅為盡力而為的快取）
 let cachedUsage: { totalBytes: number; timestamp: number } | null = null;
@@ -28,6 +30,7 @@ export type ListMediaOptions = {
 
 export async function listMedia(prefix = "", options: ListMediaOptions = {}): Promise<MediaListing> {
   const normalizedPrefix = normalizePath(prefix);
+  if (isTrashPath(normalizedPrefix)) throw new R2ActionError('垃圾桶須由管理模式查看', 403);
   const searchPrefix = buildFolderKey(normalizedPrefix);
 
   const response = await signedFetch(
@@ -49,7 +52,7 @@ export async function listMedia(prefix = "", options: ListMediaOptions = {}): Pr
     true,
   );
 
-  const files: MediaFile[] = contents.map((item) => ({
+  const files: MediaFile[] = contents.filter(item => !isTrashPath(item.key)).map((item) => ({
     key: item.key,
     url: encodeKeyForUrl(item.key, getEnv().R2_PUBLIC_BASE),
     type: inferType(item.key),
@@ -59,7 +62,7 @@ export async function listMedia(prefix = "", options: ListMediaOptions = {}): Pr
 
   return {
     prefix: normalizedPrefix,
-    folders,
+    folders: folders.filter(folder => !isTrashPath(folder.key)),
     files,
     nextCursor: nextContinuationToken ?? null,
   } satisfies MediaListing;

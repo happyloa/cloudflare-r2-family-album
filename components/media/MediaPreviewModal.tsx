@@ -42,13 +42,15 @@ export function MediaPreviewModal({
   allFiles = [],
   onClose,
   onNavigate,
-  triggerElement
+  triggerElement,
+  zIndex = 50,
 }: {
   media: MediaFile | null;
   allFiles?: MediaFile[];
   onClose: () => void;
   onNavigate?: (file: MediaFile) => void;
   triggerElement?: HTMLElement | null;
+  zIndex?: number;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -118,6 +120,7 @@ export function MediaPreviewModal({
   return (
     <div
       className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center overflow-y-auto bg-surface-950/90 p-4 backdrop-blur-md sm:p-6 animate-modal-backdrop-in"
+      style={{ zIndex }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"

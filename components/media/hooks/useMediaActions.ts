@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH } from '@/lib/constants';
+import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_TRASH_ITEMS_PER_REQUEST } from '@/lib/constants';
 
 import { getDepth, sanitizeName } from '@/lib/path';
 import { FolderItem, MediaFile, MediaTarget, MessageTone } from "../types";
@@ -18,6 +18,7 @@ type UseMediaActionsProps = {
   upsertLocalItems: (items: { files?: MediaFile[]; folders?: FolderItem[]; prefix?: string }) => void;
   currentPrefix: string;
   refreshUsage: (force?: boolean) => void | Promise<void>;
+  onTrashChanged?: () => void;
 };
 
 // 依 HTTP 狀態碼給出更明確的失敗訊息；401 通常代表管理 session 已逾時。
@@ -82,6 +83,7 @@ export function useMediaActions({
   upsertLocalItems,
   currentPrefix,
   refreshUsage,
+  onTrashChanged,
 }: UseMediaActionsProps) {
   const [renameTarget, setRenameTarget] = useState<MediaTarget | null>(null);
   const refreshListing = () => void loadMedia(currentPrefix, { silent: true });
@@ -227,21 +229,25 @@ export function useMediaActions({
   const commitDeleteOnServer = async (items: BatchItem[]) => {
     if (items.length === 0) return;
     try {
-      const response = await authorizedFetch("/api/media", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "batch-delete", items }),
-      });
-      if (!response.ok) {
-        pushMessage(await describeActionFailure(response, "刪除失敗，請稍後再試"), "error");
-        await loadMedia(currentPrefix, { silent: true });
-        return;
+      for (let offset = 0; offset < items.length; offset += MAX_TRASH_ITEMS_PER_REQUEST) {
+        const response = await authorizedFetch("/api/media", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "batch-delete", items: items.slice(offset, offset + MAX_TRASH_ITEMS_PER_REQUEST) }),
+        });
+        if (!response.ok) {
+          pushMessage(await describeActionFailure(response, "刪除失敗，請稍後再試"), "error");
+          await loadMedia(currentPrefix, { silent: true });
+          return;
+        }
       }
       void refreshUsage(true);
       refreshListing();
     } catch {
       pushMessage("刪除時發生錯誤，請稍後再試。", "error");
       await loadMedia(currentPrefix, { silent: true });
+    } finally {
+      onTrashChanged?.();
     }
   };
 
