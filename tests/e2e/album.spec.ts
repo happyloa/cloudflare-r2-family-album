@@ -103,6 +103,26 @@ test('management waits for JavaScript before accepting the first click', async (
   await login(page);
 });
 
+test('server protects management APIs and exposes the isolated upload policy', async ({ request }) => {
+  const authorize = () => request.get('/api/upload', { headers: { 'x-admin-token': password } });
+  const policy = await authorize();
+  expect(policy.status()).toBe(200);
+  expect(policy.headers()['cache-control']).toBe('no-store');
+  expect(await policy.json()).toEqual({ limits: { maxFileCount: 20, maxTotalSizeMB: 32, maxImageSizeMB: 10, maxVideoSizeMB: 32 } });
+
+  for (const [method, path] of [
+    ['GET', '/api/upload'], ['GET', '/api/media/usage'],
+    ['POST', '/api/media'], ['PATCH', '/api/media'], ['DELETE', '/api/media'],
+    ['POST', '/api/upload'],
+  ]) {
+    // Reset the shared test IP's failure counter between unauthorized requests.
+    expect((await authorize()).status()).toBe(200);
+    expect((await request.fetch(path, { method, data: { action: 'validate' } })).status()).toBe(401);
+  }
+  expect((await authorize()).status()).toBe(200);
+  expect((await request.get('/api/media?limit=0')).status()).toBe(400);
+});
+
 test('public browsing, folder history, preview, keyboard navigation and responsive layout', async ({ page }, testInfo) => {
   await fixture(page);
   await page.goto('/');

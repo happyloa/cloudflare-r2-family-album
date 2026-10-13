@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
+
 const workerRuntime = process.env.ALBUM_E2E_RUNTIME === 'worker';
+const runtimeEnvPath = fileURLToPath(new URL('./tests/fixtures/runtime.env', import.meta.url));
+const testEnv = parseEnv(readFileSync(runtimeEnvPath, 'utf8'));
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -14,11 +20,15 @@ export default defineConfig({
   ],
   webServer: {
     command: workerRuntime
-      ? 'wrangler dev --config dist/server/wrangler.json --local --ip 127.0.0.1 --port 3100 --var ADMIN_ACCESS_TOKEN:album-isolated-test-password'
+      ? `wrangler dev --config dist/server/wrangler.json --local --ip 127.0.0.1 --port 3100 --env-file "${runtimeEnvPath}"`
       : 'npm run dev -- --hostname 127.0.0.1 --port 3100',
     url: 'http://127.0.0.1:3100',
     reuseExistingServer: false,
-    env: { ADMIN_ACCESS_TOKEN: 'album-isolated-test-password' },
+    env: {
+      ...testEnv,
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false',
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'true',
+    },
     timeout: 120000,
   },
 });
