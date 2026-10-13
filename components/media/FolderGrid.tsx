@@ -136,12 +136,12 @@ export function FolderGrid({
     return (
       <article
         key={folder.key}
-        className={`group relative min-w-0 rounded-2xl border bg-surface-800/40 transition-all duration-200 hover:-translate-y-0.5 hover:bg-surface-800/70 ${
+        className={`group relative min-w-0 rounded-lg border bg-surface-900/50 transition-colors hover:bg-surface-800/60 ${
           selected
             ? 'border-primary-500 ring-2 ring-primary-500/60'
             : isDropping
               ? 'border-primary-400 ring-2 ring-primary-400/60'
-              : 'border-surface-700/60 hover:border-primary-500/40'
+              : 'border-transparent hover:border-surface-700'
         }`}
         draggable={isAdmin}
         onContextMenu={(event) => {
@@ -175,7 +175,7 @@ export function FolderGrid({
           type="button"
           onClick={(event) => handleCardClick(folder, event)}
           onKeyDown={(event) => handleCardKeyDown(folder, event)}
-          className={`flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-2xl p-4 text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary-400/70 ${isAdmin ? 'pr-12' : ''}`}
+          className={`flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 ${isAdmin ? 'pl-10 pr-10' : ''}`}
           aria-label={
             isDragging
               ? `將項目移動到 ${folder.name || '未命名'} 資料夾`
@@ -185,12 +185,14 @@ export function FolderGrid({
           }
         >
           <span
-            className="flex size-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-500/15 text-2xl ring-1 ring-primary-500/20"
+            className="flex size-6 flex-shrink-0 items-center justify-center text-surface-400"
             aria-hidden
           >
-            📁
+            <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3V7Z" />
+            </svg>
           </span>
-          <span className="min-w-0 flex-1 break-words text-base font-semibold text-surface-50">{folder.name || '未命名'}</span>
+          <span className="min-w-0 flex-1 break-words text-sm font-medium text-surface-200">{folder.name || '未命名'}</span>
         </button>
 
         {isAdmin ? (
@@ -238,11 +240,11 @@ export function FolderGrid({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 border-b border-surface-700/50 pb-6">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-xl font-bold text-surface-50">資料夾</h3>
-          <span className="rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">
+          <h3 className="text-sm font-medium text-surface-300">資料夾</h3>
+          <span className="text-xs text-surface-500">
             {folders.length} 個
           </span>
         </div>
@@ -258,27 +260,27 @@ export function FolderGrid({
       </div>
 
       {!isRootLevel ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{folders.map(renderCard)}</div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{folders.map(renderCard)}</div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:gap-x-6 lg:grid-cols-3">
           {sortedYears.map((year, index) => {
             const groupFolders = groupedFolders[year];
             const expanded = isGroupExpanded(year, index);
             return (
-              <div key={year} className="space-y-3">
+              <div key={year} className="min-w-0 space-y-2">
                 <button
                   type="button"
                   onClick={() => toggleGroup(year, index)}
                   aria-expanded={expanded}
                   disabled={searching}
-                  className="flex w-full items-center justify-between rounded-xl bg-surface-800/40 px-4 py-3 text-left transition-colors hover:bg-surface-800/70 focus:outline-none focus:ring-2 focus:ring-primary-500/40 cursor-pointer"
+                  className="flex w-full cursor-pointer items-center justify-between rounded-md px-1 py-1 text-left text-surface-400 transition-colors hover:text-primary-200"
                 >
                   <div className="flex items-center gap-3">
-                    <h4 className="text-base font-bold text-surface-50">{year === '其他' ? '其他未分類' : `${year} 年`}</h4>
-                    <span className="rounded-full bg-surface-700/50 px-2 py-0.5 text-xs text-surface-300">{groupFolders.length}</span>
+                    <h4 className="text-sm font-medium">{year === '其他' ? '其他未分類' : `${year} 年`}</h4>
+                    <span className="text-xs text-surface-500">{groupFolders.length}</span>
                   </div>
                   <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-full bg-surface-700/40 text-surface-300 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+                    className={`flex size-6 items-center justify-center transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="6 9 12 15 18 9" />
@@ -286,7 +288,7 @@ export function FolderGrid({
                   </span>
                 </button>
                 {expanded ? (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{groupFolders.map(renderCard)}</div>
+                  <div className="space-y-2">{groupFolders.map(renderCard)}</div>
                 ) : null}
               </div>
             );

@@ -150,6 +150,42 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   await page.screenshot({ path: `.cache/${testInfo.project.name}-album.png`, fullPage: true });
 });
 
+test('keyboard focus and dialogs work with forced colors and reduced motion', async ({ page }, testInfo) => {
+  await fixture(page);
+  await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+  await page.goto('/');
+  const manage = page.getByRole('button', { name: '啟用管理模式' });
+  await expect(manage).toBeEnabled();
+  await page.keyboard.press('Tab');
+  await expect(manage).toBeFocused();
+  expect(await manage.evaluate(element => {
+    const style = getComputedStyle(element);
+    return element.matches(':focus-visible') && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
+  })).toBe(true);
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(page.getByLabel('管理密碼', { exact: true })).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: `.cache/${testInfo.project.name}-forced-colors.png` });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(manage).toBeFocused();
+  await login(page);
+  const add = page.getByRole('button', { name: '新增', exact: true });
+  await add.click();
+  await page.getByRole('menuitem', { name: '建立資料夾', exact: true }).click();
+  await expect(page.getByLabel('資料夾名稱', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(add).toBeFocused();
+  await more(page, 'photo.jpg');
+  await page.getByRole('menuitem', { name: '重新命名', exact: true }).click();
+  await expect(page.getByLabel('新名稱', { exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  const photoCard = page.locator('article').filter({ has: page.getByRole('button', { name: '預覽媒體 photo.jpg', exact: true }) });
+  await expect(photoCard.getByRole('button', { name: '更多操作' })).toBeFocused();
+});
+
 test('sort, filter, video playback and unsupported preview fallback', async ({ page }) => {
   await fixture(page); await page.goto('/');
   await page.getByRole('button', { name: '名稱', exact: true }).click();

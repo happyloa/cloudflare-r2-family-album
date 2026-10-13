@@ -101,7 +101,6 @@ export function PasswordPromptModal({
             }}
             placeholder="輸入管理密碼"
             autoComplete="current-password"
-            autoFocus
             disabled={submitting}
             aria-invalid={Boolean(error)}
             aria-describedby={inputDescription}

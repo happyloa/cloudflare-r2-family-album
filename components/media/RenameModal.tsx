@@ -136,7 +136,6 @@ export function RenameModal({
               autoComplete="off"
               autoCapitalize="none"
               autoCorrect="off"
-              autoFocus
               disabled={isSubmitting}
               aria-invalid={Boolean(errorMessage)}
               aria-describedby={inputDescription}

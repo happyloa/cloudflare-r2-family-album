@@ -128,7 +128,7 @@ export function ContextMenu({
               entry.onSelect();
             }}
           >
-            {entry.icon ? <span className="w-5 text-center text-base leading-none">{entry.icon}</span> : null}
+            {entry.icon ? <span className="w-5 text-center text-base leading-none" aria-hidden>{entry.icon}</span> : null}
             <span>{entry.label}</span>
           </button>
         );

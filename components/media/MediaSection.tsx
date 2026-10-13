@@ -53,6 +53,7 @@ export function MediaSection({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const longPress = useLongPress((id) => onToggleSelect(id));
   const autoLoadEnabled = !searchQuery.trim() && filter === 'all';
+  const featureFirstPhoto = !isAdmin && autoLoadEnabled && files.length >= 3 && files[0]?.type === 'image';
 
   // 無限捲動：sentinel 進入視窗時載入下一批
   useEffect(() => {
@@ -111,8 +112,8 @@ export function MediaSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-xl font-bold text-white">媒體檔案</h3>
-          <span className="rounded-full bg-primary-500/10 px-3 py-1 text-xs font-semibold text-primary-300 ring-1 ring-primary-500/20">
+          <h3 className="text-sm font-medium text-surface-300">媒體檔案</h3>
+          <span className="text-xs text-surface-500">
             {filterLabel}（{files.length}）
           </span>
         </div>
@@ -128,17 +129,17 @@ export function MediaSection({
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className={`album-gallery ${featureFirstPhoto ? 'album-gallery-featured' : ''}`}>
         {files.map((item) => {
           const id = makeSelectionId(item.key, false);
           const selected = isAdmin && isSelected(id);
           return (
             <article
               key={item.key}
-              className={`group relative overflow-hidden rounded-2xl border bg-surface-800/50 shadow-lg transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${
+              className={`group relative min-w-0 overflow-hidden rounded-lg border transition-colors ${
                 selected
                   ? 'border-primary-500 ring-2 ring-primary-500/60'
-                  : 'border-surface-700/50 hover:border-primary-500/40'
+                  : 'border-transparent hover:border-surface-700'
               }`}
               onContextMenu={(event) => {
                 if (!isAdmin) return;
@@ -162,7 +163,7 @@ export function MediaSection({
                 type="button"
                 onClick={(event) => handleCardClick(item, event)}
                 onKeyDown={(event) => handleCardKeyDown(item, event)}
-                className="flex w-full cursor-pointer flex-col text-left outline-none transition-transform active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300"
+                className="flex h-full w-full cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300"
                 aria-label={
                   isAdmin && selectionMode
                     ? `${selected ? '取消選取' : '選取'}媒體 ${getMediaName(item.key)}`
@@ -170,12 +171,12 @@ export function MediaSection({
                 }
               >
                 <MediaThumbnail media={item} />
-                <div className="flex flex-col gap-1 p-4 text-sm text-surface-100">
-                  <p className="truncate text-sm font-semibold text-white" title={getMediaName(item.key)}>
+                <div className="flex shrink-0 flex-col gap-1 px-1 py-3 text-sm text-surface-100">
+                  <p className="truncate text-sm font-medium text-surface-200" title={getMediaName(item.key)}>
                     {getMediaName(item.key)}
                   </p>
                   {item.lastModified ? (
-                    <p className="text-xs text-surface-500">更新：{formatTimestamp(item.lastModified)}</p>
+                    <p className="text-xs text-surface-400">更新：{formatTimestamp(item.lastModified)}</p>
                   ) : null}
                 </div>
               </button>
@@ -237,7 +238,7 @@ export function MediaSection({
           </button>
         </div>
       ) : files.length > 0 ? (
-        <p className="py-4 text-center text-xs text-surface-600">{searchQuery.trim() || filter !== 'all' ? '符合條件' : '已顯示全部'} {files.length} 個媒體</p>
+        <p className="py-4 text-center text-xs text-surface-400">{searchQuery.trim() || filter !== 'all' ? '符合條件' : '已顯示全部'} {files.length} 個媒體</p>
       ) : null}
     </div>
   );

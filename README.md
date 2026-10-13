@@ -2,7 +2,7 @@
 
 公開瀏覽、密碼管理的家庭相簿，支援資料夾、預覽、上傳、重新命名、移動與刪除。知道網址的人可以讀取清單與媒體，管理 API 需提供 `x-admin-token`。
 
-使用 React、Vinext、Vite 與 Cloudflare Workers，透過 S3 API 存取 R2。`app/` 與 `next/*` 保留相容 API，專案未安裝 `next`。介面採 Tailwind CSS 與思源黑體（Noto Sans TC），400／500／600／700 字重隨網站部署。
+使用 React、Vinext、Vite 與 Cloudflare Workers，透過 S3 API 存取 R2。`app/` 與 `next/*` 保留相容 API，專案未安裝 `next`。介面採深色攝影集版面、Tailwind CSS 與思源黑體（Noto Sans TC），字型隨網站部署。
 
 ## 開發
 

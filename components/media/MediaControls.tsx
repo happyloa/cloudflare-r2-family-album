@@ -35,11 +35,13 @@ export function MediaControls({
   if (!searchEnabled) return null;
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 rounded-xl border border-surface-700/50 bg-surface-800/50 px-3 py-2 text-xs font-semibold text-surface-200">
-            <span className="text-surface-500">搜尋</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3 sm:gap-x-5">
+          <label className="order-first flex w-full items-center gap-2 rounded-lg border border-surface-700/70 bg-surface-900 px-3 py-2.5 text-sm text-surface-400 focus-within:border-primary-400/70 sm:order-3 sm:ml-auto sm:w-64">
+            <svg className="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" strokeLinecap="round" />
+            </svg>
             <input
-              className="w-40 rounded-lg border border-surface-700 bg-surface-900/80 px-3 py-2 text-xs font-medium text-white shadow-inner outline-none transition-all duration-200 focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/30"
+              className="min-w-0 w-full bg-transparent text-sm text-surface-100 outline-none placeholder:text-surface-500 focus-visible:outline-none"
               type="search"
               value={searchQuery}
               onChange={(event) => onSearchChange(event.target.value)}
@@ -49,18 +51,18 @@ export function MediaControls({
           </label>
 
         {/* 排序控制 */}
-        <div className="flex items-center gap-1 rounded-xl border border-surface-700/50 bg-surface-800/50 px-2 py-1.5 text-xs font-semibold text-surface-200">
-          <span className="px-1 text-surface-500">排序</span>
+        <div className="order-2 flex items-center gap-1 text-xs text-surface-400">
+          <span className="sr-only mr-1 sm:not-sr-only">排序</span>
           {SORT_OPTIONS.map(({ key, label }) => (
             <button
               key={key}
               type="button"
               onClick={() => onSortKeyChange(key)}
               aria-pressed={sortKey === key}
-              className={`rounded-lg px-2.5 py-1 transition-all duration-200 cursor-pointer ${
+              className={`cursor-pointer rounded-md px-2 py-2 transition-colors ${
                 sortKey === key
-                  ? 'bg-primary-500/15 text-primary-100 ring-1 ring-primary-500/40'
-                  : 'text-surface-200 hover:text-primary-100'
+                  ? 'bg-surface-800 text-surface-100'
+                  : 'text-surface-400 hover:text-surface-100'
               }`}
             >
               {label}
@@ -80,14 +82,14 @@ export function MediaControls({
         </div>
 
         {filterVisible ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-surface-700/50 bg-surface-800/50 px-3 py-2 text-xs font-semibold text-surface-200">
+          <div className="order-1 flex items-center gap-1 text-xs font-medium sm:text-sm">
             {filters.map(({ key, label }) => (
               <button
                 key={key}
-                className={`rounded-lg border px-3 py-1.5 transition-all duration-200 cursor-pointer ${
+                className={`cursor-pointer rounded-lg px-2.5 py-2 transition-colors sm:px-3 ${
                   filter === key
-                    ? 'border-primary-500/50 bg-primary-500/15 text-primary-100 shadow-glow'
-                    : 'border-surface-700 bg-surface-800 text-surface-100 hover:border-primary-500/40 hover:text-primary-100'
+                    ? 'bg-primary-500/15 text-primary-200'
+                    : 'text-surface-400 hover:bg-surface-900 hover:text-surface-100'
                 }`}
                 type="button"
                 onClick={() => onFilterChange(key)}
