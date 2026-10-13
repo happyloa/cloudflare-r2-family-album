@@ -10,7 +10,7 @@
 - React／App Router 由 Vinext、Vite 與 Cloudflare Vite plugin 執行。開發及建置均使用 Workers runtime，不要重新加入 `next`；型別由 `vinext typegen` 與 `vinext/types` 提供。
 - Node 版本依 `.nvmrc`，指令依 `package.json`，環境設定依 `.dev.vars.example`，操作說明見 `README.md`。
 - 沿用 `app/api/`、`lib/r2/`、`lib/upload/`、`components/media/` 的共用流程；限制以 `lib/constants.ts`、`lib/upload/constants.ts` 為準。
-- 保留思源黑體（Noto Sans TC）與既有元件，依賴保持精簡。
+- 介面維持深色、思源黑體（Noto Sans TC）與照片為主的攝影集版面；工具列保持精簡，沿用既有元件與流程。
 
 ## R2 與驗證
 
