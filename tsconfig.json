@@ -18,7 +18,8 @@
     "jsx": "react-jsx",
     "incremental": true,
     "types": [
-      "node"
+      "node",
+      "vinext/types"
     ],
     "forceConsistentCasingInFileNames": true,
     "paths": {
@@ -28,21 +29,17 @@
       "@/lib/*": [
         "./lib/*"
       ]
-    },
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    }
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/types/routes.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next/dev",
+    "dist"
   ]
 }

@@ -11,28 +11,27 @@
     "workerd@1.20261006.1": true
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "vite dev --port 3000",
     "dev:worker": "vite dev --port 3001",
-    "build": "next build",
-    "build:worker": "vite build",
-    "start": "next start",
+    "build": "vite build",
+    "build:worker": "npm run build",
+    "start": "node scripts/start-worker.mjs",
     "deploy": "vinext-cloudflare deploy",
-    "deploy:dry-run": "vite build && vinext-cloudflare deploy --dry-run",
+    "deploy:dry-run": "npm run build && vinext-cloudflare deploy --dry-run && wrangler deploy --config dist/server/wrangler.json --dry-run",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv",
     "check:vinext": "vinext check",
-    "typecheck": "next typegen && tsc --noEmit",
+    "typecheck": "vinext typegen && tsc --noEmit",
     "test": "vitest --config vitest.config.mts",
     "test:run": "vitest run --config vitest.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:worker": "node scripts/test-worker.mjs",
-    "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build && npm run build:worker"
+    "verify": "npm run cf-typegen && npm run check:vinext && npm run typecheck && npm run test:run && npm run build"
   },
   "dependencies": {
     "@fontsource/noto-sans-tc": "^5.3.1",
     "@vinext/cloudflare": "^1.1.0",
     "aws4fetch": "^1.0.20",
     "fast-xml-parser": "^5.11.2",
-    "next": "^16.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-server-dom-webpack": "^19.3.0",
@@ -60,9 +59,6 @@
   },
   "overrides": {
     "postcss": "$postcss",
-    "next": {
-      "sharp": "0.35.5"
-    },
     "satori": {
       "fflate": "0.7.5"
     },
