@@ -26,24 +26,14 @@ export const metadata: Metadata = {
 
 /**
  * RootLayout: 應用程式的根佈局
- * 包含全域樣式與背景效果
+ * 包含全域樣式與相簿版面
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-Hant" className="bg-surface-950">
-      <body className="min-h-screen bg-gradient-to-b from-surface-950 via-surface-950/95 to-surface-900 text-surface-100 antialiased">
-        {/* 背景裝飾效果 */}
-        <div className="pointer-events-none fixed inset-0 -z-10 select-none overflow-hidden" aria-hidden>
-          {/* 主光暈 */}
-          <div className="absolute -left-[20%] -top-[30%] h-[60%] w-[60%] rounded-full bg-primary-500/[0.03] blur-[120px]" />
-          <div className="absolute -right-[10%] top-[10%] h-[40%] w-[40%] rounded-full bg-primary-600/[0.04] blur-[100px]" />
-          <div className="absolute bottom-[10%] left-[30%] h-[35%] w-[35%] rounded-full bg-primary-700/[0.03] blur-[80px]" />
-          {/* 細緻光點裝飾 */}
-          <div className="absolute right-[20%] top-[40%] h-2 w-2 rounded-full bg-primary-400/20 blur-sm" />
-          <div className="absolute left-[15%] top-[60%] h-1.5 w-1.5 rounded-full bg-primary-300/15 blur-sm" />
-        </div>
+      <body className="min-h-screen bg-surface-950 text-surface-100 antialiased">
         {/* 主要內容區域；未預期錯誤由 app/error.tsx 與 app/global-error.tsx 處理。 */}
-        <main className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-8 lg:px-12">
+        <main className="mx-auto max-w-[1440px] px-5 pb-20 pt-8 sm:px-8 sm:pt-12 lg:px-14">
           {children}
         </main>
       </body>

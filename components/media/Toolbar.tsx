@@ -49,18 +49,17 @@ export function Toolbar({
   }, [newMenuOpen]);
 
   return (
-    // relative z-30 讓「＋ 新增」下拉選單能浮在麵包屑之上（glass-card 的 backdrop-filter 會建立堆疊脈絡）
-    <div className="glass-card relative z-30 flex flex-col gap-4 rounded-3xl border border-surface-700/50 bg-surface-900/80 p-4 shadow-xl ring-1 ring-white/5 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-      <div className="flex items-center gap-2.5">
-        <div className="h-2 w-2 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-        <h1 className="text-lg font-bold text-white">我們這一家</h1>
+    <header className="relative z-30 flex flex-wrap items-end justify-between gap-x-6 gap-y-5 border-b border-surface-700/60 pb-6 sm:pb-8">
+      <div className="space-y-3">
+        <h1 className="text-[30px] font-medium leading-tight tracking-[-0.04em] text-surface-50 sm:text-[44px]">我們這一家</h1>
         <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+          className={`inline-flex items-center gap-2 text-xs ${
             isAdmin
-              ? 'bg-primary-500/15 text-primary-200 ring-primary-500/40'
-              : 'bg-surface-800 text-surface-300 ring-surface-600'
+              ? 'text-primary-300'
+              : 'text-surface-400'
           }`}
         >
+          <span className={`size-1.5 rounded-full ${isAdmin ? 'bg-primary-400' : 'bg-surface-500'}`} aria-hidden />
           {isAdmin ? '管理模式' : '公開瀏覽'}
         </span>
       </div>
@@ -104,7 +103,7 @@ export function Toolbar({
                       }}
                       className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-300 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-surface-100"
                     >
-                      <span className="w-5 text-center text-base leading-none">⬆️</span>上傳檔案
+                      <span className="w-5 text-center text-base leading-none" aria-hidden>⬆️</span>上傳檔案
                     </button>
                     <button
                       type="button"
@@ -117,7 +116,7 @@ export function Toolbar({
                       }}
                       className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-medium text-surface-100 transition-colors hover:bg-primary-500/15 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-300 cursor-pointer"
                     >
-                      <span className="w-5 text-center text-base leading-none">📁</span>{canCreateFolder ? '建立資料夾' : '已達資料夾層數上限'}
+                      <span className="w-5 text-center text-base leading-none" aria-hidden>📁</span>{canCreateFolder ? '建立資料夾' : '已達資料夾層數上限'}
                     </button>
                   </div>
                 </>
@@ -136,12 +135,16 @@ export function Toolbar({
             type="button"
             disabled={!ready}
             onClick={onEnableAdmin}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 cursor-pointer disabled:cursor-wait disabled:opacity-60"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-surface-700 px-3 py-2 text-xs font-medium text-surface-300 transition-colors hover:border-primary-400/60 hover:text-primary-200 disabled:cursor-wait disabled:opacity-60 sm:text-sm"
           >
-            🔓 啟用管理模式
+            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" strokeLinecap="round" />
+            </svg>
+            啟用管理模式
           </button>
         )}
       </div>
-    </div>
+    </header>
   );
 }

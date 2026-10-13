@@ -28,11 +28,11 @@ export function BreadcrumbNav({
   return (
     <nav
       aria-label="路徑導覽"
-      className="glass-card rounded-2xl border border-surface-700/50 bg-surface-900/70 px-4 py-3 text-sm text-surface-100 shadow-lg ring-1 ring-white/5"
+      className="text-sm text-surface-100"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         {/* 左側：麵包屑路徑 */}
-        <div className="flex items-center gap-3 overflow-x-auto">
+        <div className="flex min-w-0 max-w-full items-center gap-3 overflow-x-auto py-1">
           {/* 返回按鈕 - 整合到麵包屑前面 */}
           {canGoBack ? <button
               className="flex-shrink-0 rounded-lg border border-surface-600 bg-surface-800/80 p-2 text-surface-300 transition-all duration-200 hover:border-primary-500/50 hover:bg-surface-700 hover:text-primary-200 cursor-pointer"
@@ -47,7 +47,7 @@ export function BreadcrumbNav({
             </button> : null}
 
           {/* 麵包屑路徑 */}
-          <ol className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
+          <ol className="flex items-center gap-1 whitespace-nowrap text-sm" aria-label="Breadcrumb">
             {breadcrumbTrail.map((crumb, index) => {
               const isLast = index === breadcrumbTrail.length - 1;
               const isFirst = index === 0;
@@ -68,7 +68,7 @@ export function BreadcrumbNav({
                     aria-current={isLast ? 'page' : undefined}
                     title={crumb.label || '根目錄'}
                   >
-                    {isFirst ? '🏠' : crumb.label}
+                    {isFirst ? '全部相簿' : crumb.label}
                   </button>
                 </li>
               );

@@ -6,10 +6,11 @@ import { getMediaName } from '@/lib/media-name';
 import { MediaFile } from './types';
 
 function MediaBadge({ type }: { type: MediaFile['type'] }) {
+  if (type === 'image') return null;
   return (
     <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-end text-xs font-semibold text-white">
-      <span className="rounded-lg bg-surface-900/80 px-2 py-1 text-[11px] uppercase tracking-[0.15em] text-surface-100 ring-1 ring-surface-700">
-        {type === 'image' ? '圖片' : '影片'}
+      <span className="rounded-md bg-surface-950/80 px-2 py-1 text-xs text-surface-100">
+        影片
       </span>
     </div>
   );
@@ -41,7 +42,7 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
 
   if (!canPreview) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 text-surface-100">
+      <div className="flex h-full w-full items-center justify-center bg-surface-900 text-surface-100">
         <div className="flex flex-col items-center gap-2 text-xs font-semibold">
           <span className="rounded-full bg-surface-800/70 px-3 py-1 text-[11px] text-surface-200">影片</span>
           <p className="text-center text-surface-400">無法顯示縮圖，點擊查看檔案</p>
@@ -91,9 +92,9 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
   const handleReady = useCallback(() => setLoadedUrl(media.url), [media.url]);
 
   return (
-    <div className="relative aspect-[4/3] overflow-hidden bg-surface-900">
+    <div className="media-frame relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-900">
       <div
-        className={`absolute inset-0 bg-gradient-to-br from-surface-800 via-surface-900 to-surface-950 transition-opacity duration-500 ${isLoaded ? 'opacity-0' : 'opacity-100'
+        className={`absolute inset-0 bg-surface-800 transition-opacity duration-300 ${isLoaded ? 'opacity-0' : 'opacity-100'
           }`}
       />
       {failedUrl === media.url ? (
@@ -107,7 +108,7 @@ export function MediaThumbnail({ media }: { media: MediaFile }) {
           draggable={false}
           loading="lazy"
           decoding="async"
-          className={`h-full w-full object-cover transition-[opacity,filter,transform] duration-500 ${isLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-80 blur-xl scale-105'
+          className={`h-full w-full object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
           onLoad={handleReady}
           onError={() => { setFailedUrl(media.url); handleReady(); }}

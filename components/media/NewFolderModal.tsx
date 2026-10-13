@@ -90,7 +90,6 @@ export function NewFolderModal({
             onChange={(event) => setValue(event.target.value)}
             placeholder="輸入資料夾名稱（例如：taiwan-trip）"
             autoComplete="off"
-            autoFocus
             disabled={submitting}
             aria-invalid={Boolean(error)}
             aria-describedby={inputDescription}

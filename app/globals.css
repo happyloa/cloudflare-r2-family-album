@@ -2,38 +2,34 @@
 
 /* Tailwind CSS 4 — CSS-first 主題設定（@theme 即官方建議的設定方式，無需 tailwind.config） */
 @theme {
-  /* 主色：靛藍 Indigo —— 現代、對比好、深色底好讀 */
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-200: #c7d2fe;
-  --color-primary-300: #a5b4fc;
-  --color-primary-400: #818cf8;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
+  /* 低飽和綠只用於操作與選取，照片保留自己的色彩。 */
+  --color-primary-50: #eef7f1;
+  --color-primary-100: #e0eee8;
+  --color-primary-200: #c2ddd1;
+  --color-primary-300: #aacdbc;
+  --color-primary-400: #87b4a1;
+  --color-primary-500: #69957f;
+  --color-primary-600: #527762;
+  --color-primary-700: #3f5d4d;
 
-  /* 輔色：紫羅蘭 Violet —— 主要用於漸層的第二個顏色 */
-  --color-accent-300: #c4b5fd;
-  --color-accent-400: #a78bfa;
-  --color-accent-500: #8b5cf6;
-  --color-accent-600: #7c3aed;
+  --color-accent-300: #c2ddd1;
+  --color-accent-400: #aacdbc;
+  --color-accent-500: #87b4a1;
+  --color-accent-600: #69957f;
 
-  /* 表面：深中性藍灰（淺色端供文字，深色端供背景與層次） */
-  --color-surface-50: #f8fafc;
-  --color-surface-100: #f1f5f9;
-  --color-surface-200: #e2e8f0;
-  --color-surface-300: #cbd5e1;
-  --color-surface-400: #94a3b8;
-  --color-surface-500: #64748b;
-  --color-surface-600: #475569;
-  --color-surface-700: #334155;
-  --color-surface-800: #1c2435;
-  --color-surface-900: #121826;
-  --color-surface-950: #0a0e17;
+  --color-surface-50: #f5f7f2;
+  --color-surface-100: #e8ece9;
+  --color-surface-200: #d8dedd;
+  --color-surface-300: #c0cacc;
+  --color-surface-400: #a2afb2;
+  --color-surface-500: #78878c;
+  --color-surface-600: #566369;
+  --color-surface-700: #364145;
+  --color-surface-800: #22292c;
+  --color-surface-900: #191e20;
+  --color-surface-950: #101315;
 
-  /* 自訂陰影 — 靛藍光暈 */
-  --shadow-glow:
-    0 8px 32px rgba(99, 102, 241, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-glow: 0 0 0 1px rgb(135 180 161 / 25%);
   /* Modal 動畫 */
   --animate-modal-backdrop-in: modal-backdrop-in 0.2s ease-out;
   --animate-modal-content-in: modal-content-in 0.25s
@@ -77,14 +73,6 @@ body.modal-open {
   overflow: hidden;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
 :root {
   color-scheme: dark;
 }
@@ -94,29 +82,65 @@ body {
   font-family:
     "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0a0e17;
+  background: var(--color-surface-950);
 }
 
-/* 主視覺卡片：玻璃效果 */
+/* 對話框沿用共用容器，背景保持安靜。 */
 .glass-card {
-  backdrop-filter: blur(12px) saturate(1.2);
-  background: color-mix(in srgb, #121826 94%, transparent);
-  border: 1px solid color-mix(in srgb, #6366f1 16%, transparent);
-  box-shadow:
-    0 24px 64px -12px rgba(0, 0, 0, 0.55),
-    0 0 0 1px color-mix(in srgb, #818cf8 8%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--color-surface-900);
+  border: 1px solid var(--color-surface-700);
+  box-shadow: 0 24px 64px -12px rgb(0 0 0 / 55%);
+}
+
+:where(button, input, a):focus-visible {
+  outline: 2px solid var(--color-primary-300);
+  outline-offset: 3px;
+}
+
+.album-gallery {
+  display: grid;
+  gap: 1.75rem 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .album-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .album-gallery {
+    gap: 2rem 1.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .album-gallery-featured > :first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+
+  .album-gallery-featured > :first-child .media-frame {
+    aspect-ratio: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .album-gallery-featured > :first-child .media-frame > img {
+    position: absolute;
+    inset: 0;
+  }
 }
 
 /* Shared skeleton palette: intentionally subtle against the album's dark surfaces. */
 .skeleton-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(18, 24, 38, 0.88) 0%,
-    rgba(28, 36, 53, 0.92) 34%,
-    rgba(51, 65, 85, 0.68) 50%,
-    rgba(28, 36, 53, 0.92) 66%,
-    rgba(18, 24, 38, 0.88) 100%
+    var(--color-surface-900) 0%,
+    var(--color-surface-800) 34%,
+    var(--color-surface-700) 50%,
+    var(--color-surface-800) 66%,
+    var(--color-surface-900) 100%
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
@@ -132,30 +156,42 @@ body {
 }
 
 /* 自訂捲軸 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-600) var(--color-surface-950);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #121826;
+  background: var(--color-surface-950);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4f46e5;
+  background: var(--color-surface-600);
   border-radius: 4px;
-  border: 2px solid #121826;
+  border: 2px solid var(--color-surface-950);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+  background: var(--color-surface-400);
 }
 
 /* 選取文字顏色 */
 ::selection {
-  background: color-mix(in srgb, #818cf8 32%, transparent);
-  color: #e0e7ff;
+  background: var(--color-primary-700);
+  color: var(--color-primary-50);
+}
+
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  :where(button, input, a):focus-visible { outline-color: Highlight; }
+  ::-webkit-scrollbar-thumb { background: ButtonText; border-color: Canvas; }
+  ::-webkit-scrollbar-track { background: Canvas; }
 }
 
 /* Keep the floating selection controls clear of mobile browser and device chrome. */
