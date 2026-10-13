@@ -31,9 +31,13 @@ export function Toolbar({
   onPickUpload: () => void;
   onCreateFolder: () => void;
 }) {
+  const [ready, setReady] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const menuRef = useFocusTrap<HTMLDivElement>(newMenuOpen);
   const newMenuId = useId();
+
+  // SSR 先停用管理入口，等事件處理器接上後才允許點擊。
+  useEffect(() => setReady(true), []);
 
   useEffect(() => {
     if (!newMenuOpen) return;
@@ -130,8 +134,9 @@ export function Toolbar({
         ) : (
           <button
             type="button"
+            disabled={!ready}
             onClick={onEnableAdmin}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-md transition-colors hover:bg-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 cursor-pointer disabled:cursor-wait disabled:opacity-60"
           >
             🔓 啟用管理模式
           </button>

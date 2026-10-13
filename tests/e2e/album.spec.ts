@@ -86,6 +86,23 @@ async function more(page: Page, name: string) {
   await expect(page.getByRole('menu')).toBeVisible();
 }
 
+test('management waits for JavaScript before accepting the first click', async ({ page }) => {
+  await fixture(page);
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>(resolve => { releaseScripts = resolve; });
+  await page.route(/\.js(?:\?|$)/, async route => {
+    await scriptsReady;
+    await route.continue();
+  });
+  try {
+    await page.goto('/', { waitUntil: 'commit' });
+    await expect(page.getByRole('button', { name: '啟用管理模式' })).toBeDisabled();
+  } finally {
+    releaseScripts();
+  }
+  await login(page);
+});
+
 test('public browsing, folder history, preview, keyboard navigation and responsive layout', async ({ page }, testInfo) => {
   await fixture(page);
   await page.goto('/');
