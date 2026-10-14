@@ -113,14 +113,14 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
               <h2 id={titleId} className="text-2xl font-medium text-surface-50">垃圾桶</h2>
               <p id={descriptionId} className="text-sm text-surface-400">新移入的媒體保留 {retentionDays} 天，到期後由每小時排程清理。</p>
             </div>
-            <button type="button" disabled={working} onClick={onClose} className="shrink-0 rounded-lg border border-surface-700 px-3 py-2 text-sm text-surface-200 disabled:opacity-50" aria-label="關閉垃圾桶">關閉</button>
+            <button type="button" disabled={working} onClick={onClose} className="shrink-0 cursor-pointer rounded-lg border border-surface-700 px-3 py-2 text-sm text-surface-200 disabled:cursor-not-allowed disabled:opacity-50" aria-label="關閉垃圾桶">關閉</button>
           </header>
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-700/50 px-5 py-3 text-sm sm:px-6">
-            <button type="button" disabled={loading || working || !files.length} onClick={() => setSelected(allSelected ? new Set() : new Set(orderedFiles.slice(0, MAX_BATCH_ITEMS).map(file => file.key)))} className="rounded-lg px-3 py-2 text-surface-300 hover:bg-surface-900 disabled:opacity-40">{allSelected ? '取消全選' : files.length > MAX_BATCH_ITEMS ? `選取前 ${MAX_BATCH_ITEMS} 項` : '全選'}</button>
+            <button type="button" disabled={loading || working || !files.length} onClick={() => setSelected(allSelected ? new Set() : new Set(orderedFiles.slice(0, MAX_BATCH_ITEMS).map(file => file.key)))} className="cursor-pointer rounded-lg px-3 py-2 text-surface-300 hover:bg-surface-900 disabled:cursor-not-allowed disabled:opacity-40">{allSelected ? '取消全選' : files.length > MAX_BATCH_ITEMS ? `選取前 ${MAX_BATCH_ITEMS} 項` : '全選'}</button>
             <span className="mr-auto text-xs text-surface-400" aria-live="polite">已選取 {selected.size} 項</span>
-            <button type="button" disabled={!selected.size || loading || working} onClick={() => void actOnSelection('restore')} className="rounded-lg bg-primary-700 px-3 py-2 text-primary-50 disabled:opacity-40">還原</button>
-            <button type="button" disabled={!selected.size || loading || working} onClick={() => void actOnSelection('delete')} className="rounded-lg border border-red-400/30 px-3 py-2 text-red-200 disabled:opacity-40">永久刪除</button>
-            <button type="button" disabled={loading || working} onClick={() => { setActionMessage(''); void load(); }} className="rounded-lg px-3 py-2 text-surface-300 disabled:opacity-40" aria-label="重新整理垃圾桶">重新整理</button>
+            <button type="button" disabled={!selected.size || loading || working} onClick={() => void actOnSelection('restore')} className="cursor-pointer rounded-lg bg-primary-700 px-3 py-2 text-primary-50 disabled:cursor-not-allowed disabled:opacity-40">還原</button>
+            <button type="button" disabled={!selected.size || loading || working} onClick={() => void actOnSelection('delete')} className="cursor-pointer rounded-lg border border-red-400/30 px-3 py-2 text-red-200 disabled:cursor-not-allowed disabled:opacity-40">永久刪除</button>
+            <button type="button" disabled={loading || working} onClick={() => { setActionMessage(''); void load(); }} className="cursor-pointer rounded-lg px-3 py-2 text-surface-300 disabled:cursor-not-allowed disabled:opacity-40" aria-label="重新整理垃圾桶">重新整理</button>
           </div>
           <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain p-5 sm:p-6">
             {actionMessage ? <p role="status" className="break-words rounded-lg bg-surface-900 p-3 text-sm text-surface-200">{actionMessage}</p> : null}
@@ -131,10 +131,10 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
                 const expired = Date.parse(file.expiresAt) <= now;
                 return (
                   <article key={file.key} className="min-w-0 rounded-lg border border-surface-700/50 bg-surface-900/40 p-2">
-                    <button type="button" onClick={event => setPreview({ media: file, trigger: event.currentTarget })} className="block w-full rounded-lg" aria-label={`預覽垃圾桶媒體 ${getMediaName(file.originalKey)}`}><MediaThumbnail media={file} /></button>
+                    <button type="button" onClick={event => setPreview({ media: file, trigger: event.currentTarget })} className="block w-full cursor-pointer rounded-lg" aria-label={`預覽垃圾桶媒體 ${getMediaName(file.originalKey)}`}><MediaThumbnail media={file} /></button>
                     <div className="space-y-2 px-1 py-3">
-                      <label className="flex min-w-0 items-center gap-2 text-sm text-surface-100">
-                        <input type="checkbox" checked={selected.has(file.key)} disabled={working || (!selected.has(file.key) && selected.size >= MAX_BATCH_ITEMS)} onChange={event => setSelected(previous => { const next = new Set(previous); if (event.target.checked) next.add(file.key); else next.delete(file.key); return next; })} aria-label={`選取垃圾桶媒體 ${getMediaName(file.originalKey)}`} className="size-4 shrink-0 accent-primary-400" />
+                      <label className="flex min-w-0 cursor-pointer items-center gap-2 text-sm text-surface-100 has-[:disabled]:cursor-not-allowed">
+                        <input type="checkbox" checked={selected.has(file.key)} disabled={working || (!selected.has(file.key) && selected.size >= MAX_BATCH_ITEMS)} onChange={event => setSelected(previous => { const next = new Set(previous); if (event.target.checked) next.add(file.key); else next.delete(file.key); return next; })} aria-label={`選取垃圾桶媒體 ${getMediaName(file.originalKey)}`} className="size-4 shrink-0 cursor-pointer accent-primary-400 disabled:cursor-not-allowed" />
                         <span className="truncate" title={file.originalKey}>{getMediaName(file.originalKey)}</span>
                       </label>
                       <p className="break-all text-xs text-surface-400">原位置：{file.originalKey}</p>
@@ -145,7 +145,7 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
                 );
               })}
             </div>
-            {cursor ? <button type="button" onClick={() => void load(cursor)} disabled={loading || working} className="mx-auto block rounded-lg border border-surface-700 px-4 py-2 text-sm text-surface-200 disabled:opacity-50">{loading ? '載入中…' : '載入更多垃圾桶媒體'}</button> : null}
+            {cursor ? <button type="button" onClick={() => void load(cursor)} disabled={loading || working} className="mx-auto block cursor-pointer rounded-lg border border-surface-700 px-4 py-2 text-sm text-surface-200 disabled:cursor-wait disabled:opacity-50">{loading ? '載入中…' : '載入更多垃圾桶媒體'}</button> : null}
             {files.length ? <p className="text-center text-xs text-surface-400">{cursor ? '已載入' : '共'} {files.length} 個媒體。同名項目不會被覆寫；到期後無法還原。</p> : null}
           </div>
         </div>

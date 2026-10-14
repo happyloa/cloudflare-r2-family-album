@@ -151,7 +151,7 @@ export function MediaPreviewModal({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <a
-              className="rounded-full border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-100 transition-all duration-200 hover:border-primary-500/50 hover:text-primary-100 whitespace-nowrap"
+              className="cursor-pointer rounded-full border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-100 transition-all duration-200 hover:border-primary-500/50 hover:text-primary-100 whitespace-nowrap"
               href={media.url}
               target="_blank"
               rel="noreferrer"
@@ -185,7 +185,7 @@ export function MediaPreviewModal({
             {hasFailed ? (
               <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 px-12 text-center text-sm text-surface-300">
                 <p>無法載入預覽。可在新分頁開啟，或下載後查看。</p>
-                <button type="button" className="rounded-lg border border-surface-600 px-3 py-2" onClick={() => setFailedUrl('')}>重新載入</button>
+                <button type="button" className="cursor-pointer rounded-lg border border-surface-600 px-3 py-2" onClick={() => setFailedUrl('')}>重新載入</button>
               </div>
             ) : media.type === 'image' ? (
               <img

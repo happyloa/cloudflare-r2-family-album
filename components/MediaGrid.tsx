@@ -325,7 +325,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       {isAdmin ? (
         <>
           <button type="button" onClick={() => setTrashOpen(true)} aria-label="開啟垃圾桶" title="垃圾桶"
-            className="fixed right-5 z-40 flex size-14 items-center justify-center rounded-full border border-surface-600 bg-surface-900 text-primary-200 shadow-lg transition-colors hover:border-primary-400 hover:bg-surface-800"
+            className="fixed right-5 z-40 flex size-14 cursor-pointer items-center justify-center rounded-full border border-surface-600 bg-surface-900 text-primary-200 shadow-lg transition-colors hover:border-primary-400 hover:bg-surface-800"
             style={{ bottom: `calc(${selection.selectedCount || pendingDelete ? '7rem' : '1.5rem'} + env(safe-area-inset-bottom, 0px))` }}>
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
@@ -410,7 +410,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
               <button
                 type="button"
                 onClick={() => void loadMedia(currentPrefix)}
-                className="shrink-0 rounded-lg border border-red-300/40 bg-surface-950/30 px-3 py-2 font-semibold text-red-50 transition-colors hover:bg-red-500/20"
+                className="shrink-0 cursor-pointer rounded-lg border border-red-300/40 bg-surface-950/30 px-3 py-2 font-semibold text-red-50 transition-colors hover:bg-red-500/20"
               >
                 再試一次
               </button>
@@ -491,7 +491,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
           />
           {hasMore && files.length === 0 ? (
             <div className="flex justify-center py-6" aria-live="polite">
-              <button type="button" onClick={loadMore} disabled={loadingMore} className="flex items-center gap-2 rounded-full border border-surface-700 bg-surface-800/80 px-4 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-wait disabled:opacity-60">
+              <button type="button" onClick={loadMore} disabled={loadingMore} className="flex cursor-pointer items-center gap-2 rounded-full border border-surface-700 bg-surface-800/80 px-4 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 disabled:cursor-wait disabled:opacity-60">
                 {loadingMore ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden /> : null}
                 <span>{loadingMore ? '\u8f09\u5165\u4e2d\u2026' : '\u8f09\u5165\u66f4\u591a'}</span>
               </button>

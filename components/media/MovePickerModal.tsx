@@ -246,7 +246,7 @@ export function MovePickerModal({
                 type="button"
                 onClick={() => void loadFolders(browsePrefix)}
                 disabled={submitting}
-                className="rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                className="cursor-pointer rounded-lg border border-red-300/40 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 再試一次
               </button>
@@ -288,7 +288,7 @@ export function MovePickerModal({
                     type="button"
                     onClick={() => void loadFolders(browsePrefix, nextCursor)}
                     disabled={loadingMore || submitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-surface-700/70 px-3 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-wait disabled:opacity-60"
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-surface-700/70 px-3 py-2 text-sm font-semibold text-surface-200 transition-colors hover:border-primary-500/60 hover:bg-primary-500/10 hover:text-primary-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-300 disabled:cursor-wait disabled:opacity-60"
                   >
                     {loadingMore ? (
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-400/40 border-t-primary-400" aria-hidden />

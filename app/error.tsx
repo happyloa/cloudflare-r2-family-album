@@ -33,13 +33,13 @@ export default function RouteError({ error, retry }: RouteErrorProps) {
           <button
             type="button"
             onClick={retry}
-            className="rounded-full bg-primary-400 px-4 py-2 text-sm font-semibold text-surface-950 transition-colors hover:bg-primary-300"
+            className="cursor-pointer rounded-full bg-primary-400 px-4 py-2 text-sm font-semibold text-surface-950 transition-colors hover:bg-primary-300"
           >
             再試一次
           </button>
           <a
             href="/"
-            className="rounded-full border border-surface-600 px-4 py-2 text-sm font-semibold text-surface-100 transition-colors hover:border-surface-400 hover:bg-surface-800"
+            className="cursor-pointer rounded-full border border-surface-600 px-4 py-2 text-sm font-semibold text-surface-100 transition-colors hover:border-surface-400 hover:bg-surface-800"
           >
             回到首頁
           </a>
