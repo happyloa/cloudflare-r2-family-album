@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { TrashMedia } from '@/lib/r2/trash';
 import { MAX_BATCH_ITEMS, MAX_TRASH_ITEMS_PER_REQUEST } from '@/lib/constants';
 import { getMediaName } from '@/lib/media-name';
@@ -99,11 +100,11 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
     } finally { setWorking(false); }
   };
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
   const allSelected = selected.size === Math.min(files.length, MAX_BATCH_ITEMS) && selected.size > 0;
   const date = (value: string) => new Date(value).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-950/90 p-3 backdrop-blur-sm sm:p-6" onClick={() => { if (!working) onClose(); }}>
         <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={loading || working}
@@ -151,6 +152,7 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
         </div>
       </div>
       <MediaPreviewModal zIndex={80} media={preview?.media ?? null} allFiles={orderedFiles} onClose={() => setPreview(null)} onNavigate={media => setPreview(previous => previous ? { ...previous, media: media as TrashMedia } : null)} triggerElement={preview?.trigger ?? null} />
-    </>
+    </>,
+    document.body
   );
 }
