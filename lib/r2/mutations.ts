@@ -1,4 +1,4 @@
-import { MAX_FOLDER_DEPTH } from "@/lib/constants";
+import { MAX_FOLDER_DEPTH, MAX_TRASH_ITEMS_PER_REQUEST } from "@/lib/constants";
 import type { ValidatedUploadFile } from "@/lib/upload/media-validation";
 
 import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "../path";
@@ -20,6 +20,8 @@ import {
   R2ActionError,
 } from "./core";
 import { clearUsageCache } from "./queries";
+import { getTrashRetentionDays, isTrashPath } from '../trash-policy';
+import { trashFiles } from './trash';
 
 const MAX_FILE_NAME_LENGTH = 255;
 const COPY_CONCURRENCY = 4;
@@ -81,6 +83,7 @@ function normalizeStoredKey(key: string, label: string) {
   if (!normalized) {
     throw new Error(`Invalid ${label}`);
   }
+  if (isTrashPath(normalized)) throw new R2ActionError('垃圾桶路徑不能用於一般相簿操作');
   if (hasPeriodOnlyPathSegment(normalized)) {
     throw new Error(`${label} contains an unsafe period-only path segment`);
   }
@@ -89,6 +92,7 @@ function normalizeStoredKey(key: string, label: string) {
 
 function normalizeStoredPrefix(prefix: string, label: string) {
   const normalized = normalizePath(prefix);
+  if (isTrashPath(normalized)) throw new R2ActionError('垃圾桶路徑不能用於一般相簿操作');
   if (hasPeriodOnlyPathSegment(normalized)) {
     throw new Error(`${label} contains an unsafe period-only path segment`);
   }
@@ -97,6 +101,7 @@ function normalizeStoredPrefix(prefix: string, label: string) {
 
 function normalizeNewName(value: string, label: string) {
   const normalized = sanitizeName(value);
+  if (isTrashPath(normalized)) throw new R2ActionError('此名稱保留給垃圾桶使用');
   if (!normalized || isPeriodOnlyPathSegment(normalized)) {
     throw new Error(`Invalid ${label}`);
   }
@@ -541,9 +546,13 @@ export async function dissolveFolder(folderKey: string) {
   await deleteObjects(keys);
 }
 
-// 批次刪除：檔案直接刪除；資料夾則「解包」內容到上一層後移除（較安全、可搭配 Undo）
+// 媒體移入垃圾桶；資料夾仍解包到上一層，不刪除內容。
 export async function batchDelete(items: { key: string; isFolder: boolean }[]) {
   const fileKeys = new Set<string>();
+  for (const item of items) normalizeStoredKey(item.key, item.isFolder ? 'folder key' : 'file key');
+  const requestedFiles = new Set(items.filter(item => !item.isFolder).map(item => item.key));
+  if (requestedFiles.size > MAX_TRASH_ITEMS_PER_REQUEST) throw new R2ActionError(`媒體每次最多移入 ${MAX_TRASH_ITEMS_PER_REQUEST} 項，請分批操作`);
+  if (requestedFiles.size) getTrashRetentionDays();
 
   for (const item of items) {
     if (item.isFolder) {
@@ -554,7 +563,7 @@ export async function batchDelete(items: { key: string; isFolder: boolean }[]) {
   }
 
   if (fileKeys.size > 0) {
-    await deleteObjects([...fileKeys]);
+    await trashFiles([...fileKeys]);
   }
 
   clearUsageCache();

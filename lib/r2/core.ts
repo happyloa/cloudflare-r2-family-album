@@ -80,7 +80,7 @@ export function getEnv(): Record<EnvKeys, string> {
       "",
       ...missing,
       "",
-      "提示：請參考 .env.example 檔案並建立 .env.local 設定",
+      "提示：請參考 .dev.vars.example 並建立 .dev.vars 設定",
     ].join("\n");
     throw new Error(message);
   }
@@ -178,7 +178,7 @@ function ensureArray<T>(value: T | T[] | undefined): T[] {
 // 讀取 XML 文字節點
 function readTextNode(value: unknown): string {
   if (value === undefined || value === null) return "";
-  if (typeof value === "string" || typeof value === "number") {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   if (
@@ -428,15 +428,23 @@ export async function deleteObjects(
 }
 
 // 在 Bucket 內複製物件
-export async function copyObjectWithinBucket(sourceKey: string, targetKey: string) {
+export async function copyObjectWithinBucket(sourceKey: string, targetKey: string, options: { requireAbsentDestination?: boolean } = {}) {
   assertSafeEndpointObjectKey(sourceKey);
   const copyUrl = buildObjectUrl(targetKey);
   const copyResponse = await signedFetch(copyUrl, {
     method: "PUT",
     headers: {
       "x-amz-copy-source": encodeCopySource(getEnv().R2_BUCKET_NAME, sourceKey),
+      ...(options.requireAbsentDestination ? { 'cf-copy-destination-if-none-match': '*' } : {}),
     },
   });
+
+  if (options.requireAbsentDestination && responseIsConflict(copyResponse.status)) {
+    throw new R2ActionError('原位置已有同名項目，請先處理同名項目後重試', 409);
+  }
+  if (options.requireAbsentDestination && copyResponse.status === 404) {
+    throw new R2ActionError('項目已不存在，請重新整理垃圾桶', 404);
+  }
 
   if (!copyResponse.ok) {
     throw new Error(
@@ -450,3 +458,5 @@ export async function copyObjectWithinBucket(sourceKey: string, targetKey: strin
     throw new Error("R2 did not confirm the object copy");
   }
 }
+
+function responseIsConflict(status: number) { return status === 412 || status === 409; }

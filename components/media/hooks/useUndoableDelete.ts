@@ -93,15 +93,15 @@ export function useUndoableDelete({
       const allowed = await requestAdminToken('請輸入管理密碼以刪除項目');
       if (!allowed) return;
 
-      // 資料夾採「解包」：內容移到上一層、不會被刪除；只有檔案是真的刪除
+      // 資料夾解包；媒體在六秒復原時間結束後才移入垃圾桶。
       const hasFolder = items.some((item) => item.isFolder);
       const hasFile = items.some((item) => !item.isFolder);
       const message =
         hasFolder && hasFile
-          ? '將刪除選取的檔案，並把資料夾解包（內容移到上一層、不會刪除）。可在數秒內復原。'
+          ? '媒體會移入垃圾桶，資料夾內容會移到上一層。可在六秒內取消，媒體移入後也能從垃圾桶還原。'
           : hasFolder
             ? '將移除資料夾，裡面的內容會移到上一層（不會被刪除）。可在數秒內復原。'
-            : `確定刪除選取的 ${items.length} 個檔案？可在數秒內復原。`;
+            : `將 ${items.length} 個媒體移入垃圾桶？可在六秒內取消，移入後也能從垃圾桶還原。`;
       const ok = await confirm({
         title: '刪除項目',
         message,

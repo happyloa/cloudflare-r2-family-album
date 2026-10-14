@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { unstable_readConfig } from 'wrangler';
@@ -16,7 +16,7 @@ if (!workerRuntime) {
   // Keep the production runtime settings, with only local assets and fake R2 credentials.
   const devConfig = JSON.stringify({
     name: 'album-e2e',
-    main: source.main,
+    main: resolve(dirname(fileURLToPath(import.meta.url)), source.main!),
     compatibility_date: source.compatibility_date,
     compatibility_flags: source.compatibility_flags,
     assets: source.assets,
@@ -31,8 +31,8 @@ if (!workerRuntime) {
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
-  // Vite compiles routes on demand; keep development tests below the local compiler's capacity.
-  workers: workerRuntime ? undefined : 2,
+  // 限制大量瀏覽器同時冷啟動；開發模式另保留給 Vite 編譯的資源。
+  workers: workerRuntime ? 4 : 2,
   timeout: 45000,
   outputDir: '.cache/playwright-results',
   reporter: 'list',

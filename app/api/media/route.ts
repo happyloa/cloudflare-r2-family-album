@@ -145,6 +145,7 @@ export async function GET(request: NextRequest) {
     const media = await listMedia(prefix, { cursor, limit });
     return NextResponse.json(media);
   } catch (error) {
+    if (error instanceof R2ActionError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("Failed to list media", error);
     return NextResponse.json({ error: "無法載入媒體列表" }, { status: 500 });
   }
@@ -311,6 +312,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "未知的請求" }, { status: 400 });
   } catch (error) {
     console.error("Failed to delete item", error);
+    if (error instanceof R2ActionError) return NextResponse.json({ error: error.message }, { status: error.status });
     return NextResponse.json({ error: "刪除失敗" }, { status: 500 });
   }
 }

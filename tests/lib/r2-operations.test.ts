@@ -2,10 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 
-const { storage, copyFailures, requests } = vi.hoisted(() => ({
+const { storage, copyFailures, copyConflicts, requests } = vi.hoisted(() => ({
   storage: new Map<string, number>(),
   copyFailures: new Set<string>(),
-  requests: [] as { method: string; key: string }[],
+  copyConflicts: new Set<string>(),
+  requests: [] as { method: string; key: string; headers: Headers }[],
 }));
 
 vi.mock('aws4fetch', () => ({
@@ -14,7 +15,7 @@ vi.mock('aws4fetch', () => ({
       const url = new URL(input);
       const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
       const method = init.method ?? 'GET';
-      requests.push({ method, key });
+      requests.push({ method, key, headers: new Headers(init.headers) });
       if (method === 'HEAD') return new Response(null, { status: storage.has(key) ? 200 : 404 });
       if (method === 'DELETE') { storage.delete(key); return new Response(null, { status: 204 }); }
       if (method === 'POST' && url.searchParams.has('delete')) {
@@ -26,6 +27,7 @@ vi.mock('aws4fetch', () => ({
       if (method === 'PUT') {
         const source = new Headers(init.headers).get('x-amz-copy-source');
         if (source) {
+          if (copyConflicts.has(key) || (new Headers(init.headers).get('cf-copy-destination-if-none-match') === '*' && storage.has(key))) return new Response(null, { status: 412 });
           const sourceKey = decodeURIComponent(source.split('/').slice(2).join('/'));
           if (copyFailures.has(sourceKey)) return new Response('<Error><Code>InternalError</Code></Error>');
           if (!storage.has(sourceKey)) return new Response(null, { status: 404 });
@@ -37,24 +39,33 @@ vi.mock('aws4fetch', () => ({
       }
       const prefix = url.searchParams.get('prefix') ?? '';
       const delimiter = url.searchParams.get('delimiter');
-      const entries: string[] = [];
+      const entries: { key: string; xml: string }[] = [];
       const folders = new Set<string>();
       for (const [storedKey, size] of storage) {
         if (!storedKey.startsWith(prefix)) continue;
         const rest = storedKey.slice(prefix.length);
         if (delimiter && rest.includes('/')) { folders.add(prefix + rest.split('/')[0] + '/'); continue; }
-        entries.push(`<Contents><Key>${storedKey}</Key><Size>${size}</Size><LastModified>2026-10-01T00:00:00Z</LastModified></Contents>`);
+        const xmlKey = storedKey.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        entries.push({ key: storedKey, xml: `<Contents><Key>${xmlKey}</Key><Size>${size}</Size><LastModified>2026-10-01T00:00:00Z</LastModified></Contents>` });
       }
-      return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${[...folders].map(folder => `<CommonPrefixes><Prefix>${folder}</Prefix></CommonPrefixes>`).join('')}${entries.join('')}</ListBucketResult>`);
+      const cursor = url.searchParams.get('continuation-token') ?? '';
+      const all = [...entries, ...[...folders].map(folder => ({ key: folder, xml: `<CommonPrefixes><Prefix>${folder}</Prefix></CommonPrefixes>` }))].sort((a, b) => a.key < b.key ? -1 : 1).filter(entry => entry.key > cursor);
+      const page = all.slice(0, Number(url.searchParams.get('max-keys') ?? 1000));
+      const more = all.length > page.length;
+      return new Response(`<ListBucketResult><IsTruncated>${more}</IsTruncated>${more ? `<NextContinuationToken>${page.at(-1)!.key}</NextContinuationToken>` : ''}${page.map(entry => entry.xml).join('')}</ListBucketResult>`);
     }
   },
 }));
 
 import { batchDelete, batchMove, createFolder, listMedia, moveFolder, renameFile, renameFolder, uploadFilesToR2 } from '@/lib/r2';
+import { listTrash, permanentlyDeleteTrashFile, purgeExpiredTrash, restoreTrashFile, trashFiles } from '@/lib/r2/trash';
+import { calculateBucketUsage, clearUsageCache } from '@/lib/r2';
+import { DAY_MS, parseTrashKey, TRASH_PREFIX } from '@/lib/trash-policy';
 
 describe('R2 operations with isolated S3 storage', () => {
   beforeEach(() => {
-    storage.clear(); copyFailures.clear(); requests.length = 0;
+    storage.clear(); copyFailures.clear(); copyConflicts.clear(); requests.length = 0; clearUsageCache();
+    vi.stubEnv('TRASH_RETENTION_DAYS', '15');
     for (const key of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']) vi.stubEnv(key, 'test');
     vi.stubEnv('R2_PUBLIC_BASE', 'https://media.test');
   });
@@ -107,5 +118,80 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(first.media[0].key).not.toBe(second.media[0].key);
     expect(first.media[0]).toMatchObject({ size: 5, lastModified: expect.any(String) });
     expect(storage.size).toBe(2);
+  });
+
+  it('starts retention when media enters trash and hides it from public browsing while counting its bytes', async () => {
+    const now = Date.UTC(2026, 9, 13, 10);
+    storage.set('trip/old.jpg', 123);
+    await trashFiles(['trip/old.jpg'], now);
+    const key = [...storage.keys()][0];
+    expect(parseTrashKey(key)).toEqual({ originalKey: 'trip/old.jpg', trashedAt: now, expiresAt: now + 15 * DAY_MS });
+    expect((await listTrash()).files[0]).toMatchObject({ originalKey: 'trip/old.jpg', trashedAt: new Date(now).toISOString() });
+    expect((await listMedia()).folders).toEqual([]);
+    await expect(listMedia(TRASH_PREFIX)).rejects.toMatchObject({ status: 403 });
+    expect(await calculateBucketUsage(true)).toEqual({ totalBytes: 123 });
+  });
+
+  it('applies custom retention only to new entries and refuses invalid configuration before copying', async () => {
+    const now = Date.UTC(2026, 9, 13);
+    storage.set('first.jpg', 1); await trashFiles(['first.jpg'], now);
+    vi.stubEnv('TRASH_RETENTION_DAYS', '3');
+    storage.set('second.jpg', 2); await trashFiles(['second.jpg'], now);
+    expect((await listTrash()).files.map(file => Date.parse(file.expiresAt) - now).sort((a, b) => a - b)).toEqual([3 * DAY_MS, 15 * DAY_MS]);
+    vi.stubEnv('TRASH_RETENTION_DAYS', '1.5');
+    storage.set('third.jpg', 3);
+    const calls = requests.length;
+    await expect(trashFiles(['third.jpg'], now)).rejects.toThrow('TRASH_RETENTION_DAYS');
+    expect(requests).toHaveLength(calls); expect(storage.has('third.jpg')).toBe(true);
+  });
+
+  it('keeps media when moving to trash fails and rejects access through ordinary album mutations', async () => {
+    storage.set('photo.jpg', 123); copyFailures.add('photo.jpg');
+    await expect(trashFiles(['photo.jpg'])).rejects.toThrow();
+    expect(storage.get('photo.jpg')).toBe(123);
+    expect(requests.some(request => request.method === 'POST')).toBe(false);
+    await expect(createFolder('', TRASH_PREFIX.slice(0, -1))).rejects.toThrow();
+    await expect(batchMove([{ key: 'photo.jpg', isFolder: false }], TRASH_PREFIX)).rejects.toThrow();
+    const calls = requests.length;
+    await expect(trashFiles(['invalid\u0000.jpg'])).rejects.toThrow();
+    expect(requests).toHaveLength(calls);
+  });
+
+  it('restores Unicode media to its original path and refuses to overwrite existing media', async () => {
+    const now = Date.UTC(2026, 9, 13);
+    const original = '旅行/記憶&照片.jpg';
+    storage.set(original, 321); await trashFiles([original], now);
+    const key = [...storage.keys()][0];
+    storage.set(original, 999);
+    await expect(restoreTrashFile(key, now)).rejects.toMatchObject({ status: 409 });
+    expect(storage.get(original)).toBe(999); expect(storage.get(key)).toBe(321);
+    storage.delete(original);
+    const media = await restoreTrashFile(key, now);
+    expect(media.key).toBe(original); expect(storage.get(original)).toBe(321); expect(storage.has(key)).toBe(false);
+    expect(requests.find(request => request.method === 'PUT' && request.key === original)?.headers.get('cf-copy-destination-if-none-match')).toBe('*');
+  });
+
+  it('preserves the trash copy when a concurrent restore claims the original name', async () => {
+    const now = Date.UTC(2026, 9, 13);
+    storage.set('photo.jpg', 123); await trashFiles(['photo.jpg'], now);
+    const key = [...storage.keys()][0]; copyConflicts.add('photo.jpg');
+    await expect(restoreTrashFile(key, now)).rejects.toMatchObject({ status: 409 });
+    expect(storage.get(key)).toBe(123);
+    await expect(restoreTrashFile(key, now + 15 * DAY_MS)).rejects.toMatchObject({ status: 410 });
+  });
+
+  it('purges only due valid trash entries, follows pagination and stops before future entries', async () => {
+    const now = Date.UTC(2026, 9, 13);
+    for (let index = 0; index < 150; index++) storage.set(`old-${index}.jpg`, 1);
+    await trashFiles([...storage.keys()], now - 15 * DAY_MS);
+    storage.set('future.jpg', 2); await trashFiles(['future.jpg'], now);
+    storage.set('ordinary.jpg', 3); storage.set(`${TRASH_PREFIX}unknown-object.jpg`, 4);
+    requests.length = 0;
+    expect(await purgeExpiredTrash(now)).toBe(150);
+    expect(storage.has('ordinary.jpg')).toBe(true);
+    expect(storage.has(`${TRASH_PREFIX}unknown-object.jpg`)).toBe(true);
+    expect((await listTrash()).files.map(file => file.originalKey)).toEqual(['future.jpg']);
+    expect(requests.filter(request => request.method === 'GET').length).toBe(3);
+    await expect(permanentlyDeleteTrashFile('ordinary.jpg')).rejects.toThrow();
   });
 });
