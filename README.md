@@ -91,3 +91,5 @@ GitHub Verify 在推送 `main`、Pull Request 與手動觸發時執行，不負�
 - 10 GB 容量條只是前端提醒，並非伺服器配額或零費用保證。密碼限速未跨 Worker isolate 共用，R2 批次操作也不是交易，失敗時可能已有部分項目完成。
 
 `package.json` 保留 `postcss`、`satori/fflate` 與 `vendor/dynamic-import-glob` 的安全覆寫，移除前需確認上游修補並通過完整驗證。參考：[braces 漏洞公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)、[tinyglobby 遷移指引](https://superchupu.dev/tinyglobby/migration)、[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。
+
+目前依賴的 Satori 仍以 fflate 0.7 API 解壓 WOFF 字型，因此保留已修補的 `fflate@0.7.5`；直接改用 0.8 會破壞字型解壓，需等上游依賴更新後再升級。
