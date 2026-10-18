@@ -107,15 +107,15 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
       requestSequenceRef.current = requestSequence;
       requestControllerRef.current?.abort();
       loadingMoreRef.current = false;
-      nextCursorRef.current = null;
       loadedPrefixRef.current = prefix;
       setLoadingMore(false);
-      setNextCursor(null);
       loadingRef.current = true;
       if (!options.silent) {
         setLoadError(null);
         if (isNavigation) {
           // Do not show a previous folder's items under a new breadcrumb.
+          nextCursorRef.current = null;
+          setNextCursor(null);
           setFiles([]);
           setFolders([]);
         }
@@ -210,7 +210,7 @@ export function useMediaData({ pushMessage, initialPrefix = '' }: UseMediaDataPr
           requestControllerRef.current = null;
         }
         loadingRef.current = false;
-        if (!options.silent) setLoading(false);
+        setLoading(false);
       }
     },
     [pushMessage]

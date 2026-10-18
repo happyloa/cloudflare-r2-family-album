@@ -92,12 +92,13 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
       }
       const message = failures.length ? `${completedKeys.length} 個完成，${failures.length} 個未完成：${failures[0].error}` : `已${action === 'restore' ? '還原' : '永久刪除'} ${completedKeys.length} 個媒體`;
       setActionMessage(message);
-      onChanged();
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : '操作失敗，請稍後再試');
-      // 連線中斷也可能已有項目完成，重新讀取而不假設整批失敗。
-      void load();
-    } finally { setWorking(false); }
+    } finally {
+      // 連線中斷也可能已有項目完成，相簿、容量與垃圾桶都須重新核對。
+      setWorking(false);
+      onChanged();
+    }
   };
 
   if (!open || typeof document === 'undefined') return null;
