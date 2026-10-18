@@ -123,7 +123,7 @@ async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: strin
   for (let offset = 0; offset < tasks.length; offset += COPY_CONCURRENCY) {
     const batch = tasks.slice(offset, offset + COPY_CONCURRENCY);
     const results = await Promise.allSettled(
-      batch.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey)),
+      batch.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey, { requireAbsentDestination: true })),
     );
 
     results.forEach((result, index) => {
@@ -184,7 +184,7 @@ async function listExistingFileNames(
   return existingNames;
 }
 // 依資料夾列出既有檔名 (用於大量移動時檢查衝突)
-async function listExistingFileNamesByFolder(prefix: string) {
+async function listExistingEntriesByFolder(prefix: string) {
   const existingNamesByFolder = new Map<string, Set<string>>();
   const keys = await collectKeys(prefix, { includePrefixObject: true });
 
@@ -199,7 +199,7 @@ async function listExistingFileNamesByFolder(prefix: string) {
     existingNamesByFolder.set(folderPath, names);
   }
 
-  return existingNamesByFolder;
+  return { existingNamesByFolder, existingKeys: new Set(keys) };
 }
 
 // ── 上傳 / 建立 ──
@@ -330,7 +330,7 @@ export async function createFolder(prefix: string, name: string) {
 async function relocateFile(sourceKey: string, targetKey: string): Promise<MediaFile> {
   if (sourceKey !== targetKey) {
     await assertFileDestinationDoesNotConflictWithFolder(targetKey);
-    await copyObjectWithinBucket(sourceKey, targetKey);
+    await copyObjectWithinBucket(sourceKey, targetKey, { requireAbsentDestination: true });
     const response = await signedFetch(buildObjectUrl(sourceKey), { method: "DELETE" });
     if (!response.ok && response.status !== 404) {
       throw new Error(`Failed to delete source file: ${response.status} ${response.statusText}`);
@@ -460,8 +460,8 @@ export async function moveFolder(key: string, targetPrefix: string) {
   })) {
     throw new R2ActionError("移動後的子資料夾會超過兩層，請選擇較淺的目標位置。");
   }
-  const existingNamesByFolder =
-    await listExistingFileNamesByFolder(targetFolderPath);
+  const { existingNamesByFolder } =
+    await listExistingEntriesByFolder(targetFolderPath);
 
   const copyTasks: { sourceKey: string; targetKey: string }[] = [];
 
@@ -514,16 +514,20 @@ export async function dissolveFolder(folderKey: string) {
   if (keys.length === 0) return;
 
   // 以父層既有檔名為基準做衝突改名
-  const existingNamesByFolder = await listExistingFileNamesByFolder(parent);
+  const { existingNamesByFolder, existingKeys } = await listExistingEntriesByFolder(parent);
 
   const copyTasks: { sourceKey: string; targetKey: string }[] = [];
+  const retainedMarkerKeys = new Set<string>();
   for (const sourceKey of keys) {
     // 把 "trip/..." 換成父層前綴："trip/sub/x.jpg" → "sub/x.jpg"（root）或 "2024/sub/x.jpg"
     const mappedKey = sourceKey.replace(sourcePrefix, targetPrefixKey);
 
     if (sourceKey.endsWith("/")) {
-      // 資料夾標記：原資料夾本身映射到父層（root 時為空字串）→ 跳過；子資料夾標記照搬保留
-      if (mappedKey) copyTasks.push({ sourceKey, targetKey: mappedKey });
+      if (!mappedKey) continue;
+      // 既有標記只保留，不覆寫或加入回滾。子資料夾也可能映射回原資料夾，
+      // 例如 trip/trip/ → trip/，來源清理時必須保留這個目的地。
+      retainedMarkerKeys.add(mappedKey);
+      if (!existingKeys.has(mappedKey)) copyTasks.push({ sourceKey, targetKey: mappedKey });
       continue;
     }
 
@@ -543,7 +547,7 @@ export async function dissolveFolder(folderKey: string) {
 
   await copyObjectsInBatches(copyTasks);
 
-  await deleteObjects(keys);
+  await deleteObjects(keys.filter(key => !retainedMarkerKeys.has(key)));
 }
 
 // 媒體移入垃圾桶；資料夾仍解包到上一層，不刪除內容。

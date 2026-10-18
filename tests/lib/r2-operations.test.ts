@@ -2,10 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 
-const { storage, copyFailures, copyConflicts, requests } = vi.hoisted(() => ({
+const { storage, copyFailures, copyConflicts, copyArrivals, requests } = vi.hoisted(() => ({
   storage: new Map<string, number>(),
   copyFailures: new Set<string>(),
   copyConflicts: new Set<string>(),
+  copyArrivals: new Map<string, number>(),
   requests: [] as { method: string; key: string; headers: Headers }[],
 }));
 
@@ -27,6 +28,10 @@ vi.mock('aws4fetch', () => ({
       if (method === 'PUT') {
         const source = new Headers(init.headers).get('x-amz-copy-source');
         if (source) {
+          if (copyArrivals.has(key)) {
+            storage.set(key, copyArrivals.get(key)!);
+            copyArrivals.delete(key);
+          }
           if (copyConflicts.has(key) || (new Headers(init.headers).get('cf-copy-destination-if-none-match') === '*' && storage.has(key))) return new Response(null, { status: 412 });
           const sourceKey = decodeURIComponent(source.split('/').slice(2).join('/'));
           if (copyFailures.has(sourceKey)) return new Response('<Error><Code>InternalError</Code></Error>');
@@ -57,14 +62,14 @@ vi.mock('aws4fetch', () => ({
   },
 }));
 
-import { batchDelete, batchMove, createFolder, listMedia, moveFolder, renameFile, renameFolder, uploadFilesToR2 } from '@/lib/r2';
+import { batchDelete, batchMove, createFolder, listMedia, moveFile, moveFolder, renameFile, renameFolder, uploadFilesToR2 } from '@/lib/r2';
 import { listTrash, permanentlyDeleteTrashFile, purgeExpiredTrash, restoreTrashFile, trashFiles } from '@/lib/r2/trash';
 import { calculateBucketUsage, clearUsageCache } from '@/lib/r2';
 import { DAY_MS, parseTrashKey, TRASH_PREFIX } from '@/lib/trash-policy';
 
 describe('R2 operations with isolated S3 storage', () => {
   beforeEach(() => {
-    storage.clear(); copyFailures.clear(); copyConflicts.clear(); requests.length = 0; clearUsageCache();
+    storage.clear(); copyFailures.clear(); copyConflicts.clear(); copyArrivals.clear(); requests.length = 0; clearUsageCache();
     vi.stubEnv('TRASH_RETENTION_DAYS', '15');
     for (const key of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']) vi.stubEnv(key, 'test');
     vi.stubEnv('R2_PUBLIC_BASE', 'https://media.test');
@@ -98,6 +103,18 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(requests.some(request => request.method === 'DELETE')).toBe(false);
   });
 
+  it.each([
+    { action: 'rename', sourceKey: 'original.jpg', targetKey: 'renamed.jpg', run: () => renameFile('original.jpg', 'renamed') },
+    { action: 'move', sourceKey: 'original.jpg', targetKey: 'trip/original.jpg', run: () => moveFile('original.jpg', 'trip') },
+  ])('preserves both files when a concurrent $action claims the destination', async ({ sourceKey, targetKey, run }) => {
+    storage.set(sourceKey, 123);
+    copyArrivals.set(targetKey, 999);
+    await expect(run()).rejects.toMatchObject({ status: 409 });
+    expect(Object.fromEntries(storage)).toEqual({ [sourceKey]: 123, [targetKey]: 999 });
+    expect(requests.find(request => request.method === 'PUT')?.headers.get('cf-copy-destination-if-none-match')).toBe('*');
+    expect(requests.some(request => request.method === 'DELETE' || request.method === 'POST')).toBe(false);
+  });
+
   it('rejects moving a nested subtree beyond the maximum depth before copying anything', async () => {
     storage.set('trip/', 0); storage.set('trip/child/photo.jpg', 123);
     await expect(moveFolder('trip', 'year')).rejects.toThrow(/層/);
@@ -109,6 +126,47 @@ describe('R2 operations with isolated S3 storage', () => {
     storage.set('trip/a.jpg', 1); storage.set('trip/b.jpg', 2); copyFailures.add('trip/b.jpg');
     await expect(renameFolder('trip', 'renamed')).rejects.toThrow();
     expect(Object.fromEntries(storage)).toEqual({ 'trip/a.jpg': 1, 'trip/b.jpg': 2 });
+  });
+
+  it.each([
+    { action: 'rename', targetPrefix: 'renamed', run: () => renameFolder('trip', 'renamed') },
+    { action: 'move', targetPrefix: 'year/trip', run: () => moveFolder('trip', 'year') },
+  ])('rolls back only owned copies when a concurrent folder $action claims a destination', async ({ targetPrefix, run }) => {
+    storage.set('trip/a.jpg', 1); storage.set('trip/b.jpg', 2);
+    copyArrivals.set(`${targetPrefix}/b.jpg`, 999);
+    await expect(run()).rejects.toMatchObject({ status: 409 });
+    expect(Object.fromEntries(storage)).toEqual({ 'trip/a.jpg': 1, 'trip/b.jpg': 2, [`${targetPrefix}/b.jpg`]: 999 });
+    expect(requests.filter(request => request.method === 'PUT').every(request => request.headers.get('cf-copy-destination-if-none-match') === '*')).toBe(true);
+  });
+
+  it('preserves existing directory markers when a dissolve copy fails and rolls back', async () => {
+    storage.set('child/', 99); storage.set('trip/', 0); storage.set('trip/child/', 0);
+    storage.set('trip/child/a.jpg', 1); storage.set('trip/child/b.jpg', 2);
+    const originalStorage = Object.fromEntries(storage);
+    copyFailures.add('trip/child/b.jpg');
+    await expect(batchDelete([{ key: 'trip', isFolder: true }])).rejects.toThrow();
+    expect(Object.fromEntries(storage)).toEqual(originalStorage);
+    expect(requests.some(request => request.method === 'PUT' && request.key === 'child/')).toBe(false);
+  });
+
+  it('keeps the existing parent marker when dissolving its child folder', async () => {
+    storage.set('year/', 99); storage.set('year/trip/', 0); storage.set('year/trip/photo.jpg', 1);
+    await batchDelete([{ key: 'year/trip', isFolder: true }]);
+    expect(Object.fromEntries(storage)).toEqual({ 'year/': 99, 'year/photo.jpg': 1 });
+    expect(requests.some(request => request.method === 'PUT' && request.key === 'year/')).toBe(false);
+  });
+
+  it('preserves an empty child folder that maps onto the source marker during dissolve', async () => {
+    storage.set('trip/', 0); storage.set('trip/trip/', 0);
+    await batchDelete([{ key: 'trip', isFolder: true }]);
+    expect(Object.fromEntries(storage)).toEqual({ 'trip/': 0 });
+    expect(requests.some(request => request.method === 'PUT')).toBe(false);
+  });
+
+  it('preserves an implicit parent when dissolving its only empty child', async () => {
+    storage.set('year/trip/', 0);
+    await batchDelete([{ key: 'year/trip', isFolder: true }]);
+    expect(Object.fromEntries(storage)).toEqual({ 'year/': 0 });
   });
 
   it('uses distinct keys for simultaneous same-name uploads and reports actual file metadata', async () => {
