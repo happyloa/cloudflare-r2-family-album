@@ -2,7 +2,7 @@
 
 家庭相簿，支援資料夾、媒體預覽、上傳、重新命名、移動與垃圾桶。清單與媒體公開，管理操作需要密碼，管理 API 以 `x-admin-token` 驗證。
 
-使用 React、Vinext、Vite 與 Cloudflare Workers，透過 S3 API 存取 R2。Vinext 提供 App Router 與 `next/*` 相容 API，專案未安裝 `next`。介面採深色攝影集版面、Tailwind CSS 與隨站部署的思源黑體（Noto Sans TC）。
+使用 React、Vinext、Vite 與 Cloudflare Workers，透過 S3 API 存取 R2。Vinext 提供 App Router 與 `next/*` 相容 API，專案未安裝 `next`。介面採深色攝影集版面、Tailwind CSS 與隨站部署的思源黑體（Noto Sans TC 變動字型）。
 
 ## 開發
 

@@ -171,10 +171,11 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.evaluate(() => document.fonts.ready);
-  expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain('"Noto Sans TC"');
+  expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain('"Noto Sans TC Variable"');
   expect(await page.evaluate(async () => {
-    const faces = await document.fonts.load('400 16px "Noto Sans TC"', '我們這一家');
-    return faces.length > 0 && faces.every(face => face.status === 'loaded');
+    const faces = await Promise.all([400, 500, 600, 700].map(weight =>
+      document.fonts.load(`${weight} 16px "Noto Sans TC Variable"`, '我們這一家龍龜𠮷')));
+    return faces.every(group => group.length > 0 && group.every(face => face.status === 'loaded'));
   })).toBe(true);
   const fontRequests = await page.evaluate(() => performance.getEntriesByType('resource').filter(item => /\.woff2?/.test(item.name)));
   expect(fontRequests.length).toBeGreaterThan(0);
