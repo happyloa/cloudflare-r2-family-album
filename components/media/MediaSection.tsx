@@ -195,7 +195,7 @@ export function MediaSection({
                       ? 'border-primary-400 bg-primary-500 text-surface-950'
                       : `border-white/70 bg-surface-900/60 text-transparent ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100'}`
                   }`}
-                  aria-label={selected ? '取消選取' : '選取'}
+                  aria-label={`${selected ? '取消選取' : '選取'} ${getMediaName(item.key)}`}
                   aria-pressed={selected}
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -214,7 +214,7 @@ export function MediaSection({
                   }}
                   onTouchStart={(event) => event.stopPropagation()}
                   className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-900/70 text-surface-200 opacity-0 ring-1 ring-white/10 backdrop-blur-sm transition-all duration-150 hover:bg-surface-900 hover:text-white group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 [@media(hover:none)]:opacity-100 cursor-pointer"
-                  aria-label="更多操作"
+                  aria-label={`更多操作 ${getMediaName(item.key)}`}
                 >
                   <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
                     <circle cx="12" cy="5" r="1.6" />

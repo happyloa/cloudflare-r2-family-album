@@ -19,6 +19,8 @@ function MediaBadge({ type }: { type: MediaFile['type'] }) {
 function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady: () => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [canPreview, setCanPreview] = useState(true);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [wantsPlayback, setWantsPlayback] = useState(false);
   const hasNotifiedRef = useRef(false);
 
   const notifyReady = useCallback(() => {
@@ -40,6 +42,35 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
     };
   }, [src, notifyReady]);
 
+  useEffect(() => {
+    if (shouldLoad) return;
+    const video = videoRef.current;
+    if (!video) return;
+    if (typeof IntersectionObserver === 'undefined') { setShouldLoad(true); return; }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) setShouldLoad(true);
+    }, { rootMargin: '300px' });
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !shouldLoad || !wantsPlayback) return;
+    let cancelled = false;
+    void video.play().catch(() => {
+      // Leaving a card can cancel play() before it resolves; that is not a format error.
+      if (!cancelled) { setCanPreview(false); notifyReady(); }
+    });
+    return () => { cancelled = true; video.pause(); };
+  }, [shouldLoad, wantsPlayback, notifyReady]);
+
+  const startPreview = () => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    setShouldLoad(true);
+    setWantsPlayback(true);
+  };
+
   if (!canPreview) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-surface-900 text-surface-100">
@@ -55,30 +86,17 @@ function VideoPreview({ src, alt, onReady }: { src: string; alt: string; onReady
     <video
       ref={videoRef}
       className="h-full w-full object-cover"
-      src={src}
+      src={shouldLoad ? src : undefined}
       muted
       playsInline
       loop
       draggable={false}
       preload="metadata"
       aria-label={alt}
-      onPointerEnter={() => {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-        const video = videoRef.current;
-        if (!video) return;
-        void video.play().catch(() => {
-          setCanPreview(false);
-          notifyReady();
-        });
-      }}
-      onPointerLeave={() => videoRef.current?.pause()}
-      onFocus={() => {
-        const video = videoRef.current;
-        if (video && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          void video.play().catch(() => setCanPreview(false));
-        }
-      }}
-      onBlur={() => videoRef.current?.pause()}
+      onPointerEnter={startPreview}
+      onPointerLeave={() => setWantsPlayback(false)}
+      onFocus={startPreview}
+      onBlur={() => setWantsPlayback(false)}
       onLoadedData={notifyReady}
       onError={() => { setCanPreview(false); notifyReady(); }}
     />

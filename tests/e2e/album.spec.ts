@@ -111,8 +111,8 @@ async function login(page: Page) {
 async function more(page: Page, name: string) {
   const article = page.locator('article').filter({ has: page.getByRole('button', { name: `預覽媒體 ${name}`, exact: true }) });
   const touch = await page.evaluate(() => matchMedia('(hover:none)').matches);
-  if (touch) await article.getByRole('button', { name: '更多操作' }).tap();
-  else { await article.hover(); await article.getByRole('button', { name: '更多操作' }).click(); }
+  if (touch) await article.getByRole('button', { name: `更多操作 ${name}`, exact: true }).tap();
+  else { await article.hover(); await article.getByRole('button', { name: `更多操作 ${name}`, exact: true }).click(); }
   await expect(page.getByRole('menu')).toBeVisible();
 }
 
@@ -159,7 +159,7 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   await fixture(page);
   await page.goto('/');
   await expect(page.getByRole('button', { name: '預覽媒體 photo.jpg' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '更多操作' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^更多操作 / })).toHaveCount(0);
   await page.getByRole('button', { name: '開啟資料夾 2025旅行', exact: true }).click();
   await expect(page).toHaveURL(/folder=/);
   await expect(page.getByRole('button', { name: '開啟資料夾 目的地' })).toBeVisible();
@@ -181,6 +181,25 @@ test('public browsing, folder history, preview, keyboard navigation and responsi
   expect(fontRequests.length).toBeGreaterThan(0);
   expect(fontRequests.every(item => new URL(item.name).origin === new URL(page.url()).origin)).toBe(true);
   await page.screenshot({ path: `.cache/${testInfo.project.name}-album.png`, fullPage: true });
+});
+
+test('video thumbnails request media only when approaching the viewport', async ({ page }) => {
+  const state = await fixture(page);
+  state.files.clear();
+  for (let index = 0; index < 24; index++) state.files.set(`photo-${index}.jpg`, photo(`photo-${index}.jpg`));
+  state.files.set('video.mp4', photo('video.mp4'));
+  const videoRequests: string[] = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/test-media/video.mp4')) videoRequests.push(request.url());
+  });
+  await page.goto('/');
+  const video = page.locator('article video[aria-label="video.mp4"]');
+  await expect(video).toHaveCount(1);
+  await expect(video).not.toHaveAttribute('src');
+  expect(videoRequests).toHaveLength(0);
+  await video.scrollIntoViewIfNeeded();
+  await expect(video).toHaveAttribute('src', '/test-media/video.mp4');
+  await expect.poll(() => videoRequests.length).toBeGreaterThan(0);
 });
 
 test('keyboard focus and dialogs work with forced colors and reduced motion', async ({ page }, testInfo) => {
@@ -216,7 +235,7 @@ test('keyboard focus and dialogs work with forced colors and reduced motion', as
   await expect(page.getByLabel('新名稱', { exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   const photoCard = page.locator('article').filter({ has: page.getByRole('button', { name: '預覽媒體 photo.jpg', exact: true }) });
-  await expect(photoCard.getByRole('button', { name: '更多操作' })).toBeFocused();
+  await expect(photoCard.getByRole('button', { name: '更多操作 photo.jpg', exact: true })).toBeFocused();
 });
 
 test('sort, filter, video playback and unsupported preview fallback', async ({ page }) => {
@@ -248,8 +267,8 @@ test('selection, batch move and maximum-depth controls', async ({ page }) => {
   const state = await fixture(page); await page.goto('/'); await login(page);
   for (const name of ['photo.jpg', 'unsupported.heic']) {
     const article = page.locator('article').filter({ has: page.getByText(name, { exact: true }) });
-    if (await page.evaluate(() => matchMedia('(hover:none)').matches)) await article.getByRole('button', { name: '選取', exact: true }).tap();
-    else { await article.hover(); await article.getByRole('button', { name: '選取', exact: true }).click(); }
+    if (await page.evaluate(() => matchMedia('(hover:none)').matches)) await article.getByRole('button', { name: `選取 ${name}`, exact: true }).tap();
+    else { await article.hover(); await article.getByRole('button', { name: `選取 ${name}`, exact: true }).click(); }
   }
   await page.getByRole('button', { name: '移動', exact: true }).click();
   await page.getByRole('button', { name: '2025旅行，進入資料夾' }).click();

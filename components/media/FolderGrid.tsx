@@ -208,7 +208,7 @@ export function FolderGrid({
                 ? 'border-primary-400 bg-primary-500 text-surface-950'
                 : `border-white/70 bg-surface-900/60 text-transparent [@media(hover:none)]:opacity-100 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
             }`}
-            aria-label={selected ? '取消選取' : '選取'}
+            aria-label={`${selected ? '取消選取' : '選取'} ${folder.name || '未命名'}`}
             aria-pressed={selected}
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -226,7 +226,7 @@ export function FolderGrid({
             }}
             onTouchStart={(event) => event.stopPropagation()}
             className="absolute right-2.5 top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-full text-surface-300 opacity-0 transition-all duration-150 hover:bg-surface-900/70 hover:text-white group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 [@media(hover:none)]:opacity-100 cursor-pointer"
-            aria-label="更多操作"
+            aria-label={`更多操作 ${folder.name || '未命名'}`}
           >
             <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="5" r="1.6" />
