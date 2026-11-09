@@ -3,6 +3,7 @@
 export const MAX_FOLDER_DEPTH = 2;
 export const MAX_FOLDER_NAME_LENGTH = 30;
 export const MAX_BATCH_ITEMS = 200;
+export const MAX_MOVE_ITEMS_PER_REQUEST = 10;
 // 透過 S3 fetch 的外部請求保留在 Workers Free 的每次 50 個上限內。
 export const MAX_TRASH_ITEMS_PER_REQUEST = 10;
 

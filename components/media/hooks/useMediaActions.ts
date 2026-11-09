@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_TRASH_ITEMS_PER_REQUEST } from '@/lib/constants';
+import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_MOVE_ITEMS_PER_REQUEST, MAX_TRASH_ITEMS_PER_REQUEST } from '@/lib/constants';
 
 import { getDepth, sanitizeName } from '@/lib/path';
 import { FolderItem, MediaFile, MediaTarget, MessageTone } from "../types";
@@ -195,20 +195,22 @@ export function useMediaActions({
 
     // 只移除真的會離開目前資料夾的項目；同資料夾 no-op 必須留在畫面上。
     removeLocalItems(movableItems);
+    let completedCount = 0;
     try {
-      const response = await authorizedFetch("/api/media", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "batch-move",
-          items: movableItems,
-          targetPrefix: normalizedTargetPrefix,
-        }),
-      });
-      if (!response.ok) {
-        pushMessage(await describeActionFailure(response, "批次移動失敗，請稍後再試"), "error");
-        await loadMedia(currentPrefix, { silent: true });
-        return false;
+      for (let offset = 0; offset < movableItems.length; offset += MAX_MOVE_ITEMS_PER_REQUEST) {
+        const chunk = movableItems.slice(offset, offset + MAX_MOVE_ITEMS_PER_REQUEST);
+        const response = await authorizedFetch("/api/media", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "batch-move", items: chunk, targetPrefix: normalizedTargetPrefix }),
+        });
+        if (!response.ok) {
+          const reason = await describeActionFailure(response, "批次移動失敗，請稍後再試");
+          pushMessage(`${completedCount ? `先前已移動 ${completedCount} 個項目。` : ''}${reason}`, "error");
+          await loadMedia(currentPrefix, { silent: true });
+          return false;
+        }
+        completedCount += chunk.length;
       }
       pushMessage(
         skippedCount > 0
@@ -219,7 +221,7 @@ export function useMediaActions({
       refreshListing();
       return true;
     } catch {
-      pushMessage("批次移動時發生錯誤，請稍後再試。", "error");
+      pushMessage(`${completedCount ? `先前已移動 ${completedCount} 個項目。` : ''}批次移動時發生錯誤，請重新整理清單確認結果。`, "error");
       await loadMedia(currentPrefix, { silent: true });
     }
     return false;

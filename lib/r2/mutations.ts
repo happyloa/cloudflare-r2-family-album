@@ -1,4 +1,4 @@
-import { MAX_FOLDER_DEPTH, MAX_TRASH_ITEMS_PER_REQUEST } from "@/lib/constants";
+import { MAX_FOLDER_DEPTH, MAX_MOVE_ITEMS_PER_REQUEST, MAX_TRASH_ITEMS_PER_REQUEST } from "@/lib/constants";
 import type { ValidatedUploadFile } from "@/lib/upload/media-validation";
 
 import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "../path";
@@ -407,13 +407,16 @@ export async function renameFolder(key: string, newName: string) {
 // ── 移動 ──
 
 // 移動檔案
-export async function moveFile(key: string, targetPrefix: string) {
+export async function moveFile(key: string, targetPrefix: string, options: { existingNames?: Set<string> } = {}) {
   const normalizedKey = normalizeStoredKey(key, "file key");
   const filename = normalizedKey.split("/").pop();
   if (!filename) throw new Error("Invalid file name");
 
   const safeTargetPrefix = normalizeStoredPrefix(targetPrefix, "target folder");
-  const existingNames = await listExistingFileNames(safeTargetPrefix, {
+  if (normalizedKey.split('/').slice(0, -1).join('/') === safeTargetPrefix) {
+    return relocateFile(normalizedKey, normalizedKey);
+  }
+  const existingNames = options.existingNames ?? await listExistingFileNames(safeTargetPrefix, {
     excludeKey: normalizedKey,
   });
   const resolvedName = buildUniqueFileNameForConflict(filename, existingNames);
@@ -421,7 +424,9 @@ export async function moveFile(key: string, targetPrefix: string) {
     ? `${safeTargetPrefix}/${resolvedName}`
     : resolvedName;
 
-  return relocateFile(normalizedKey, newKey);
+  const media = await relocateFile(normalizedKey, newKey);
+  existingNames.add(resolvedName);
+  return media;
 }
 
 // 移動資料夾
@@ -578,11 +583,18 @@ export async function batchMove(
   items: { key: string; isFolder: boolean }[],
   targetPrefix: string,
 ) {
+  if (items.length > MAX_MOVE_ITEMS_PER_REQUEST) {
+    throw new R2ActionError(`每次最多移動 ${MAX_MOVE_ITEMS_PER_REQUEST} 個項目，請分批操作`);
+  }
+  const destination = normalizeStoredPrefix(targetPrefix, 'target folder');
+  for (const item of items) normalizeStoredKey(item.key, item.isFolder ? 'folder key' : 'file key');
+  let existingNames: Set<string> | undefined;
   for (const item of items) {
     if (item.isFolder) {
-      await moveFolder(item.key, targetPrefix);
+      await moveFolder(item.key, destination);
     } else {
-      await moveFile(item.key, targetPrefix);
+      existingNames ??= await listExistingFileNames(destination);
+      await moveFile(item.key, destination, { existingNames });
     }
   }
   clearUsageCache();

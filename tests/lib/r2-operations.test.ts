@@ -96,6 +96,20 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(storage.has('photo (2).jpg')).toBe(false);
   });
 
+  it('shares the destination listing across a bounded batch and resolves duplicate names', async () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({ key: `source-${index}/photo.jpg`, isFolder: false }));
+    items.forEach((item, index) => storage.set(item.key, index + 1));
+    await batchMove(items, 'destination');
+    expect(storage.size).toBe(10);
+    expect(storage.get('destination/photo.jpg')).toBe(1);
+    expect(storage.get('destination/photo (10).jpg')).toBe(10);
+    expect(requests.filter(request => request.method === 'GET' && request.key === '').length).toBe(11);
+    expect(requests.length).toBe(31);
+    const calls = requests.length;
+    await expect(batchMove([...items, { key: 'extra.jpg', isFolder: false }], 'destination')).rejects.toMatchObject({ status: 400 });
+    expect(requests).toHaveLength(calls);
+  });
+
   it('keeps the source when a copy returns an error inside HTTP 200', async () => {
     storage.set('original.jpg', 123); copyFailures.add('original.jpg');
     await expect(renameFile('original.jpg', 'renamed')).rejects.toThrow();
