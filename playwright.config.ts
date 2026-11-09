@@ -36,7 +36,7 @@ export default defineConfig({
   // 限制大量瀏覽器同時冷啟動；開發模式另保留給 Vite 編譯的資源。
   workers: workerRuntime ? 4 : 2,
   timeout: 45000,
-  outputDir: '.cache/playwright-results',
+  outputDir: `.cache/playwright-results/${workerRuntime ? 'worker' : 'dev'}`,
   reporter: 'list',
   use: { baseURL: 'http://127.0.0.1:3100', trace: 'retain-on-failure', reducedMotion: 'reduce' },
   projects: [

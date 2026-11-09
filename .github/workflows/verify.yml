@@ -30,3 +30,12 @@ jobs:
       - run: npx playwright install --with-deps chromium --only-shell
       - run: npm run test:e2e
       - run: npm run test:e2e:worker
+      - name: Upload failed E2E traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-${{ github.run_attempt }}
+          path: .cache/playwright-results/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 5
