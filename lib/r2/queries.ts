@@ -16,10 +16,14 @@ import { R2ActionError } from './core';
 
 // R2 容量統計記憶體快取（注意：edge 環境每個 isolate 各一份，僅為盡力而為的快取）
 let cachedUsage: { totalBytes: number; timestamp: number } | null = null;
+let usageRequest: Promise<BucketUsage> | null = null;
+let usageVersion = 0;
 const CACHE_TTL_MS = 30 * 1000; // 30 秒
 
 export function clearUsageCache() {
   cachedUsage = null;
+  usageRequest = null;
+  usageVersion += 1;
 }
 
 // 取得媒體列表 (包含資料夾與檔案)
@@ -74,7 +78,21 @@ export async function calculateBucketUsage(force = false): Promise<BucketUsage> 
   if (!force && cachedUsage && now - cachedUsage.timestamp < CACHE_TTL_MS) {
     return { totalBytes: cachedUsage.totalBytes } satisfies BucketUsage;
   }
+  if (usageRequest) return usageRequest;
 
+  const version = usageVersion;
+  const request = scanBucketUsage().then(usage => {
+    // A write may have invalidated the cache while this scan was in progress.
+    if (version === usageVersion) cachedUsage = { totalBytes: usage.totalBytes, timestamp: Date.now() };
+    return usage;
+  }).finally(() => {
+    if (usageRequest === request) usageRequest = null;
+  });
+  usageRequest = request;
+  return request;
+}
+
+async function scanBucketUsage(): Promise<BucketUsage> {
   let continuationToken: string | undefined;
   let totalBytes = 0;
 
@@ -99,6 +117,5 @@ export async function calculateBucketUsage(force = false): Promise<BucketUsage> 
     continuationToken = nextContinuationToken;
   } while (continuationToken);
 
-  cachedUsage = { totalBytes, timestamp: Date.now() };
   return { totalBytes } satisfies BucketUsage;
 }

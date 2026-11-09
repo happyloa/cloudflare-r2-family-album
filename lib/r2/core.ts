@@ -332,14 +332,17 @@ export function parseListResult(
 // 收集指定 Prefix 下的所有 Key (用於刪除或移動資料夾)
 export async function collectKeys(
   prefix: string,
-  options: { includePrefixObject?: boolean } = {},
+  options: { includePrefixObject?: boolean; recursive?: boolean } = {},
 ) {
   const keys: string[] = [];
   let continuationToken: string | undefined;
   const searchPrefix = buildFolderKey(normalizePath(prefix));
 
   do {
-    const url = buildListUrl(searchPrefix, { continuationToken });
+    const url = buildListUrl(searchPrefix, {
+      continuationToken,
+      ...(options.recursive === false ? { delimiter: '/' } : {}),
+    });
     const response = await signedFetch(url.toString());
     if (!response.ok) {
       throw new Error(

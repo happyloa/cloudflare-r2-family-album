@@ -2,12 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { XMLParser } from 'fast-xml-parser';
 
-const { storage, copyFailures, copyConflicts, copyArrivals, requests } = vi.hoisted(() => ({
+const { storage, copyFailures, copyConflicts, copyArrivals, requests, listResponses } = vi.hoisted(() => ({
   storage: new Map<string, number>(),
   copyFailures: new Set<string>(),
   copyConflicts: new Set<string>(),
   copyArrivals: new Map<string, number>(),
   requests: [] as { method: string; key: string; headers: Headers }[],
+  listResponses: [] as Array<() => Response | Promise<Response>>,
 }));
 
 vi.mock('aws4fetch', () => ({
@@ -17,6 +18,7 @@ vi.mock('aws4fetch', () => ({
       const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
       const method = init.method ?? 'GET';
       requests.push({ method, key, headers: new Headers(init.headers) });
+      if (method === 'GET' && listResponses.length) return listResponses.shift()!();
       if (method === 'HEAD') return new Response(null, { status: storage.has(key) ? 200 : 404 });
       if (method === 'DELETE') { storage.delete(key); return new Response(null, { status: 204 }); }
       if (method === 'POST' && url.searchParams.has('delete')) {
@@ -69,7 +71,7 @@ import { DAY_MS, parseTrashKey, TRASH_PREFIX } from '@/lib/trash-policy';
 
 describe('R2 operations with isolated S3 storage', () => {
   beforeEach(() => {
-    storage.clear(); copyFailures.clear(); copyConflicts.clear(); copyArrivals.clear(); requests.length = 0; clearUsageCache();
+    storage.clear(); copyFailures.clear(); copyConflicts.clear(); copyArrivals.clear(); requests.length = 0; listResponses.length = 0; clearUsageCache();
     vi.stubEnv('TRASH_RETENTION_DAYS', '15');
     for (const key of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME']) vi.stubEnv(key, 'test');
     vi.stubEnv('R2_PUBLIC_BASE', 'https://media.test');
@@ -94,6 +96,44 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(Object.fromEntries(storage)).toEqual({ 'photo.jpg': 1, 'photo (2).jpg': 2, 'child/video.mp4': 3 });
     await batchDelete([{ key: 'photo (2).jpg', isFolder: false }]);
     expect(storage.has('photo (2).jpg')).toBe(false);
+  });
+
+  it('checks direct filenames without scanning unrelated nested media', async () => {
+    storage.set('photo.jpg', 1);
+    for (let index = 0; index < 1100; index++) storage.set(`nested/${index}.jpg`, 2);
+    await renameFile('photo.jpg', 'renamed');
+    expect(storage.get('renamed.jpg')).toBe(1);
+    expect(storage.get('nested/1099.jpg')).toBe(2);
+    expect(requests.filter(request => request.method === 'GET')).toHaveLength(2);
+  });
+
+  it('shares one paginated usage scan across concurrent and forced refreshes', async () => {
+    for (let index = 0; index < 1001; index++) storage.set(`photo-${index}.jpg`, 2);
+    const usage = await Promise.all([calculateBucketUsage(), calculateBucketUsage(true), calculateBucketUsage()]);
+    expect(usage).toEqual(Array.from({ length: 3 }, () => ({ totalBytes: 2002 })));
+    expect(requests.filter(request => request.method === 'GET')).toHaveLength(2);
+  });
+
+  it('retries a failed usage scan without retaining a rejected shared request', async () => {
+    storage.set('photo.jpg', 2);
+    listResponses.push(() => new Response('', { status: 503 }));
+    await expect(calculateBucketUsage()).rejects.toThrow();
+    expect(await calculateBucketUsage()).toEqual({ totalBytes: 2 });
+    expect(requests).toHaveLength(2);
+  });
+
+  it('does not put an older scan back in the cache after a write invalidates it', async () => {
+    let release!: (response: Response) => void;
+    const delayed = new Promise<Response>(resolve => { release = resolve; });
+    listResponses.push(() => delayed);
+    const older = calculateBucketUsage();
+    clearUsageCache();
+    storage.set('photo.jpg', 2);
+    expect(await calculateBucketUsage()).toEqual({ totalBytes: 2 });
+    release(new Response('<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>photo.jpg</Key><Size>1</Size></Contents></ListBucketResult>'));
+    expect(await older).toEqual({ totalBytes: 1 });
+    expect(await calculateBucketUsage()).toEqual({ totalBytes: 2 });
+    expect(requests).toHaveLength(2);
   });
 
   it('shares the destination listing across a bounded batch and resolves duplicate names', async () => {

@@ -167,7 +167,7 @@ async function listExistingFileNames(
 ) {
   const normalizedPrefix = normalizeStoredPrefix(prefix, "folder path");
   const folderKey = buildFolderKey(normalizedPrefix);
-  const keys = await collectKeys(normalizedPrefix, { includePrefixObject: true });
+  const keys = await collectKeys(normalizedPrefix, { includePrefixObject: true, recursive: false });
   const existingNames = new Set<string>();
 
   for (const key of keys) {
