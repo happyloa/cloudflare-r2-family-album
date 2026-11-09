@@ -20,6 +20,8 @@ if (!workerRuntime) {
     compatibility_date: source.compatibility_date,
     compatibility_flags: source.compatibility_flags,
     assets: source.assets,
+    durable_objects: source.durable_objects,
+    migrations: source.migrations,
     vars: testEnv,
   });
   // Playwright also loads this file in its workers; unchanged writes would restart Vite.

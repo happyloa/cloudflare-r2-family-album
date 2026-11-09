@@ -7,6 +7,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
   "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "ALBUM_MUTATIONS", "class_name": "AlbumMutations" }]
+  },
+  "migrations": [{ "tag": "v1-album-mutations", "new_sqlite_classes": ["AlbumMutations"] }],
   "triggers": { "crons": ["0 * * * *"] },
   "assets": {
     "directory": "dist/client",

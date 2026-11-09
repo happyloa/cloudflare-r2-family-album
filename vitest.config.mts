@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./', import.meta.url)),
       'next/server': 'vinext/shims/server',
+      'cloudflare:workers': fileURLToPath(new URL('./tests/fixtures/cloudflare-workers.ts', import.meta.url)),
     },
   },
   test: {
