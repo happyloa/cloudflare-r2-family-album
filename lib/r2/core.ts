@@ -1,7 +1,7 @@
 import { AwsClient } from "aws4fetch";
 import { XMLParser } from "fast-xml-parser";
 
-import { hasPeriodOnlyPathSegment } from "../path";
+import { hasPeriodOnlyPathSegment, normalizePath } from "../path";
 
 // ── 型別 ──
 
@@ -113,16 +113,6 @@ function getClient() {
 }
 
 // ── 路徑 / Key 建構 ──
-
-// 標準化路徑：移除前後斜線
-export function normalizePath(path: string) {
-  return path.replace(/^\/+|\/+$/g, "").trim();
-}
-
-// 建構物件 Key (單一檔案)
-export function buildObjectKey(path: string) {
-  return normalizePath(path);
-}
 
 // 建構資料夾 Key (以 / 結尾)
 export function buildFolderKey(path: string) {
@@ -379,17 +369,8 @@ export async function objectExists(key: string) {
   return true;
 }
 
-// 批次刪除物件（支援進度回報）
-type DeleteObjectsOptions = {
-  onProgress?: (deletedCount: number, totalCount: number) => void;
-};
-
-export async function deleteObjects(
-  keys: string[],
-  options: DeleteObjectsOptions = {},
-) {
-  const totalCount = keys.length;
-  let deletedCount = 0;
+// 批次刪除物件
+export async function deleteObjects(keys: string[]) {
   const keysToDelete = [...keys]; // 複製陣列避免修改原陣列
 
   while (keysToDelete.length > 0) {
@@ -422,8 +403,6 @@ export async function deleteObjects(
       );
     }
 
-    deletedCount += batch.length;
-    options.onProgress?.(deletedCount, totalCount);
   }
 }
 

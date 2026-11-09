@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MAX_BATCH_ITEMS, MAX_FOLDER_DEPTH, MAX_FOLDER_NAME_LENGTH, MAX_MOVE_ITEMS_PER_REQUEST, MAX_TRASH_ITEMS_PER_REQUEST } from '@/lib/constants';
 
-import { getDepth, sanitizeName } from '@/lib/path';
+import { getDepth, normalizePath, sanitizeName } from '@/lib/path';
 import { FolderItem, MediaFile, MediaTarget, MessageTone } from "../types";
 
 type BatchItem = MediaTarget;
@@ -30,18 +30,14 @@ async function describeActionFailure(response: Response, fallback: string) {
   return fallback;
 }
 
-function normalizePrefix(prefix: string) {
-  return prefix.replace(/^\/+|\/+$/g, "").trim();
-}
-
 function getParentPrefix(key: string) {
-  const parts = normalizePrefix(key).split("/").filter(Boolean);
+  const parts = normalizePath(key).split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
 }
 
 function isAlreadyInTargetParent(item: BatchItem, targetPrefix: string) {
-  return getParentPrefix(item.key) === normalizePrefix(targetPrefix);
+  return getParentPrefix(item.key) === normalizePath(targetPrefix);
 }
 
 function readConfirmedRename(data: unknown, isFolder: boolean): string | null {
@@ -182,7 +178,7 @@ export function useMediaActions({
       pushMessage(`每批最多移動 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
       return false;
     }
-    const normalizedTargetPrefix = normalizePrefix(targetPrefix);
+    const normalizedTargetPrefix = normalizePath(targetPrefix);
     const movableItems = items.filter(
       (item) => !isAlreadyInTargetParent(item, normalizedTargetPrefix),
     );

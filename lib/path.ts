@@ -1,5 +1,8 @@
 // 共用的路徑處理純函式（client 與 server 共用，避免重複實作）
 
+// Stored object keys keep their inner characters; only normalize the boundary.
+export const normalizePath = (path: string) => path.replace(/^\/+|\/+$/g, '').trim();
+
 // 清理單一名稱片段：移除不合法字元並去除前後空白
 export const sanitizeName = (value: string) =>
   value.replace(/[<>:"/\\|?*]+/g, "").trim();

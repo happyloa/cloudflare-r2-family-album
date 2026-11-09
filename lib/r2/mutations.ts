@@ -1,7 +1,7 @@
 import { MAX_FOLDER_DEPTH, MAX_MOVE_ITEMS_PER_REQUEST, MAX_TRASH_ITEMS_PER_REQUEST } from "@/lib/constants";
 import type { ValidatedUploadFile } from "@/lib/upload/media-validation";
 
-import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, sanitizeName } from "../path";
+import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, normalizePath, sanitizeName } from "../path";
 
 import {
   FolderItem,
@@ -14,7 +14,6 @@ import {
   encodeKeyForUrl,
   getEnv,
   inferType,
-  normalizePath,
   signedFetch,
   objectExists,
   R2ActionError,

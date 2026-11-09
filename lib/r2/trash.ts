@@ -1,9 +1,9 @@
 import {
-  type MediaFile, R2ActionError, buildListUrl, buildObjectUrl, collectKeys,
+  type MediaFile, R2ActionError, buildListUrl, collectKeys,
   copyObjectWithinBucket, deleteObjects, encodeKeyForUrl, getEnv, inferType,
-  normalizePath, objectExists, parseListResult, signedFetch,
+  objectExists, parseListResult, signedFetch,
 } from './core';
-import { hasPeriodOnlyPathSegment, getDepth } from '../path';
+import { hasPeriodOnlyPathSegment, getDepth, normalizePath } from '../path';
 import { MAX_FOLDER_DEPTH } from '../constants';
 import { DAY_MS, getTrashRetentionDays, isTrashPath, parseTrashKey, TRASH_PREFIX } from '../trash-policy';
 import { clearUsageCache } from './queries';

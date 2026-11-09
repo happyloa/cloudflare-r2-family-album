@@ -7,11 +7,11 @@ import {
   encodeKeyForUrl,
   getEnv,
   inferType,
-  normalizePath,
   parseListResult,
   signedFetch,
 } from "./core";
 import { isTrashPath } from '../trash-policy';
+import { normalizePath } from '../path';
 import { R2ActionError } from './core';
 
 // R2 容量統計記憶體快取（注意：edge 環境每個 isolate 各一份，僅為盡力而為的快取）
