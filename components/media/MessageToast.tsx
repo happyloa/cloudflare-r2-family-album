@@ -12,7 +12,7 @@ export function MessageToast({ message, tone }: { message: string; tone: Message
   if (!message) return null;
 
   return (
-    <div className="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-3 sm:right-6 sm:top-6">
+    <div className="pointer-events-none fixed right-4 top-4 z-[80] flex flex-col gap-3 sm:right-6 sm:top-6">
       <div
         className={`pointer-events-auto w-72 rounded-2xl border px-4 py-3 text-sm font-semibold backdrop-blur-sm animate-toast-slide-in ${toneStyles[tone]}`}
         role="status"

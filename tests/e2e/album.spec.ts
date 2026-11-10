@@ -384,6 +384,27 @@ test('password management, create, rename, retry failed move and reach the secon
   await expect(page.getByRole('button', { name: '啟用管理模式' })).toBeVisible();
 });
 
+test('a rejected password shows the remaining attempts above the open dialog', async ({ page }) => {
+  await fixture(page);
+  // Answer validation here so the shared server's failure counter stays untouched.
+  await page.route('**/api/media', async route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({ status: 401, json: { error: 'Unauthorized', remainingAttempts: 4 } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '啟用管理模式' }).click();
+  await page.getByLabel('管理密碼', { exact: true }).fill('wrong-password');
+  await page.getByRole('button', { name: '確認' }).click();
+  const toast = page.getByRole('status').filter({ hasText: '還有 4 次機會' });
+  await expect(toast).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  // Visibility alone ignores stacking; the toast must be the topmost element where it is drawn.
+  await expect.poll(() => toast.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  })).toBe(true);
+});
+
 test('upload and delete undo preserve confirmed results', async ({ page }) => {
   const state = await fixture(page);
   await page.goto('/'); await login(page);

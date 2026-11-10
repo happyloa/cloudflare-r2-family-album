@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 
 type RouteErrorProps = {
   error: Error & { digest?: string };
-  retry: () => void;
+  reset: () => void;
 };
 
 /** Next App Router 的頁面層錯誤邊界；不把原始錯誤文字顯示給訪客。 */
-export default function RouteError({ error, retry }: RouteErrorProps) {
+export default function RouteError({ error, reset }: RouteErrorProps) {
   useEffect(() => {
     console.error('Route rendering failed', {
       digest: error.digest ?? 'client-render-error',
@@ -32,7 +32,7 @@ export default function RouteError({ error, retry }: RouteErrorProps) {
         <div className="flex flex-wrap justify-center gap-3">
           <button
             type="button"
-            onClick={retry}
+            onClick={reset}
             className="cursor-pointer rounded-full bg-primary-400 px-4 py-2 text-sm font-semibold text-surface-950 transition-colors hover:bg-primary-300"
           >
             再試一次

@@ -111,6 +111,11 @@ function isSameOrDescendantPath(path: string, ancestor: string) {
   return path === ancestor || path.startsWith(`${ancestor}/`);
 }
 
+// 不用 String.replace：資料夾名稱可含 `$`，會被當成取代樣式（`$$`、`$&`）而改寫目的地。
+function swapKeyPrefix(key: string, sourcePrefix: string, targetPrefix: string) {
+  return targetPrefix + key.slice(sourcePrefix.length);
+}
+
 // 分批複製，任何一批只要有一個失敗，就把這批（含同批次裡其他已成功）以及
 // 前面批次已成功複製的目的地物件全部刪除再往上拋出錯誤，避免半途而廢留下
 // 孤兒/重複檔案，也避免下次重試被「目的地已存在」的衝突檢查永久卡住。
@@ -390,7 +395,7 @@ export async function renameFolder(key: string, newName: string) {
   await copyObjectsInBatches(
     keys.map((sourceKey) => ({
       sourceKey,
-      targetKey: sourceKey.replace(sourcePrefix, targetPrefix),
+      targetKey: swapKeyPrefix(sourceKey, sourcePrefix, targetPrefix),
     })),
   );
 
@@ -457,7 +462,7 @@ export async function moveFolder(key: string, targetPrefix: string) {
   const targetPrefixKey = buildFolderKey(targetFolderPath);
 
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
-  const destinationKeys = keys.map(sourceKey => sourceKey.replace(sourcePrefix, targetPrefixKey));
+  const destinationKeys = keys.map(sourceKey => swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey));
   if (getDepth(targetFolderPath) > MAX_FOLDER_DEPTH || destinationKeys.some(targetKey => {
     const folderPath = targetKey.endsWith('/') ? targetKey : targetKey.split('/').slice(0, -1).join('/');
     return getDepth(folderPath) > MAX_FOLDER_DEPTH;
@@ -470,7 +475,7 @@ export async function moveFolder(key: string, targetPrefix: string) {
   const copyTasks: { sourceKey: string; targetKey: string }[] = [];
 
   for (const sourceKey of keys) {
-    const targetKey = sourceKey.replace(sourcePrefix, targetPrefixKey);
+    const targetKey = swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey);
     if (sourceKey.endsWith("/")) {
       copyTasks.push({ sourceKey, targetKey });
       continue;
@@ -524,7 +529,7 @@ export async function dissolveFolder(folderKey: string) {
   const retainedMarkerKeys = new Set<string>();
   for (const sourceKey of keys) {
     // 把 "trip/..." 換成父層前綴："trip/sub/x.jpg" → "sub/x.jpg"（root）或 "2024/sub/x.jpg"
-    const mappedKey = sourceKey.replace(sourcePrefix, targetPrefixKey);
+    const mappedKey = swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey);
 
     if (sourceKey.endsWith("/")) {
       if (!mappedKey) continue;

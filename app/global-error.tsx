@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 
 type GlobalErrorProps = {
   error: Error & { digest?: string };
-  retry: () => void;
+  reset: () => void;
 };
 
 /** 根 layout 發生錯誤時的獨立文件；global CSS 不會在此 fallback 中載入。 */
-export default function GlobalError({ error, retry }: GlobalErrorProps) {
+export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error('Global rendering failed', {
       digest: error.digest ?? 'client-render-error',
@@ -54,7 +54,7 @@ export default function GlobalError({ error, retry }: GlobalErrorProps) {
             </p>
             <button
               type="button"
-              onClick={retry}
+              onClick={reset}
               style={{
                 border: 0,
                 borderRadius: '999px',

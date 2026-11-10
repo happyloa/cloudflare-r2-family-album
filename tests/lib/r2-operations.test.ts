@@ -89,6 +89,19 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(storage.has('year/journey/')).toBe(true);
   });
 
+  it('keeps dollar signs in folder names literal when renaming, moving and dissolving', async () => {
+    storage.set('trip/photo.jpg', 1);
+    expect(await renameFolder('trip', 'A$$B')).toEqual({ key: 'A$$B', name: 'A$$B' });
+    expect(Object.fromEntries(storage)).toEqual({ 'A$$B/photo.jpg': 1 });
+    await renameFolder('A$$B', '$&');
+    expect(Object.fromEntries(storage)).toEqual({ '$&/photo.jpg': 1 });
+    storage.set("$'/", 0);
+    await moveFolder('$&', "$'");
+    expect(Object.fromEntries(storage)).toEqual({ "$'/": 0, "$'/$&/photo.jpg": 1 });
+    await batchDelete([{ key: "$'/$&", isFolder: true }]);
+    expect(Object.fromEntries(storage)).toEqual({ "$'/": 0, "$'/photo.jpg": 1 });
+  });
+
   it('dissolves a folder while preserving its photos and resolving name conflicts', async () => {
     storage.set('photo.jpg', 1); storage.set('trip/', 0); storage.set('trip/photo.jpg', 2);
     storage.set('trip/child/video.mp4', 3);
