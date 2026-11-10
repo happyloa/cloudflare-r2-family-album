@@ -405,19 +405,21 @@ test('a rejected password shows the remaining attempts above the open dialog', a
   })).toBe(true);
 });
 
-test('upload and delete undo preserve confirmed results', async ({ page }) => {
+test('upload, then delete moves media to the trash only after confirmation', async ({ page }) => {
   const state = await fixture(page);
   await page.goto('/'); await login(page);
   await page.locator('input[type=file]').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=', 'base64') });
   await expect(page.getByRole('button', { name: '預覽媒體 uploaded.png' })).toBeVisible();
   await more(page, 'uploaded.png'); await page.getByRole('menuitem', { name: /刪除$/ }).click();
-  await page.getByRole('button', { name: '確定', exact: true }).click();
-  await page.getByRole('button', { name: '復原', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '刪除項目', exact: true });
+  await expect(confirmation).toContainText('保留期內可從垃圾桶還原');
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.getByRole('button', { name: '預覽媒體 uploaded.png' })).toBeVisible();
   expect(state.mutations).not.toContain('batch-delete');
   await more(page, 'uploaded.png'); await page.getByRole('menuitem', { name: /刪除$/ }).click();
-  await page.getByRole('button', { name: '確定', exact: true }).click();
-  await expect.poll(() => state.mutations.includes('batch-delete'), { timeout: 10000 }).toBe(true);
+  await confirmation.getByRole('button', { name: '確定', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '已將 1 個媒體移入垃圾桶' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '預覽媒體 uploaded.png' })).toHaveCount(0);
   expect(state.files.has('uploaded.png')).toBe(false);
   expect([...state.trash.values()].some(item => item.originalKey === 'uploaded.png')).toBe(true);
 });
@@ -428,7 +430,7 @@ test('trash appears only in management mode, previews media and restores safely'
   await login(page);
   await more(page, 'photo.jpg'); await page.getByRole('menuitem', { name: /刪除$/ }).click();
   await page.getByRole('button', { name: '確定', exact: true }).click();
-  await expect.poll(() => state.trash.size, { timeout: 10000 }).toBe(1);
+  await expect.poll(() => state.trash.size).toBe(1);
   await page.getByRole('button', { name: '開啟垃圾桶' }).click();
   const panel = page.getByRole('dialog', { name: '垃圾桶', exact: true });
   await expect(panel).toBeVisible(); await expect(panel).toContainText('保留 15 天');

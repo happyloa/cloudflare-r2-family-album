@@ -23,7 +23,6 @@ import { useMediaData } from './media/hooks/useMediaData';
 import { useMediaDragDrop } from './media/hooks/useMediaDragDrop';
 import { useMessage } from './media/hooks/useMessage';
 import { makeSelectionId, useSelection } from './media/hooks/useSelection';
-import { useUndoableDelete } from './media/hooks/useUndoableDelete';
 import { MediaPreviewModal } from './media/MediaPreviewModal';
 import { MediaControls } from './media/MediaControls';
 import { MediaSection } from './media/MediaSection';
@@ -35,7 +34,6 @@ import { PasswordPromptModal } from './media/PasswordPromptModal';
 import { SelectionToolbar } from './media/SelectionToolbar';
 import { Toolbar } from './media/Toolbar';
 import { TrashPanel } from './media/TrashPanel';
-import { UndoToast } from './media/UndoToast';
 import { getDepth } from '@/lib/path';
 import { MediaFile } from './media/types';
 
@@ -49,7 +47,7 @@ type PreviewState = {
 /**
  * MediaGrid Component: 專案核心元件
  * 整合媒體瀏覽、資料夾導覽、權限驗證、上傳、檔案操作，以及 Drive 風的多選 / 右鍵 / 拖曳上傳。
- * 拖曳上傳、刪除 Undo、頂部工具列分別抽到 useDropUpload / useUndoableDelete / Toolbar。
+ * 拖曳上傳與頂部工具列分別抽到 useDropUpload / Toolbar。
  */
 export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   const { message, messageTone, pushMessage } = useMessage();
@@ -100,10 +98,11 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     openRename,
     handleRename,
     handleMove,
-    commitDeleteOnServer
+    handleDelete
   } = useMediaActions({
     authorizedFetch,
     requestAdminToken,
+    confirm,
     pushMessage,
     loadMedia,
     removeLocalItems,
@@ -144,25 +143,6 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
     loadMedia,
     upsertLocalItems
   });
-
-  const { pendingDelete, requestDelete, undoDelete } = useUndoableDelete({
-    currentPrefix,
-    requestAdminToken,
-    confirm,
-    pushMessage,
-    removeLocalItems,
-    commitDeleteOnServer,
-    loadMedia,
-    onDeleted: selection.clear
-  });
-
-  // 背景對帳或返回資料夾時，仍在復原期間的項目不可重新出現在清單。
-  useEffect(() => {
-    if (!pendingDelete || pendingDelete.prefix !== currentPrefix) return;
-    if (pendingDelete.items.some(item => (item.isFolder ? folders : files).some(entry => entry.key === item.key))) {
-      removeLocalItems(pendingDelete.items);
-    }
-  }, [pendingDelete, currentPrefix, files, folders, removeLocalItems]);
 
   const [preview, setPreview] = useState<PreviewState>({ media: null, trigger: null });
   const [moveItems, setMoveItems] = useState<{ key: string; isFolder: boolean }[] | null>(null);
@@ -255,7 +235,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
           label: `刪除所選 (${selection.selectedCount})`,
           icon: '🗑️',
           danger: true,
-          onSelect: () => void requestDelete(selection.selectedItems)
+          onSelect: () => void handleDelete(selection.selectedItems)
         }
       ];
     }
@@ -265,7 +245,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       { label: '重新命名', icon: '✏️', onSelect: () => void openRename(target) },
       { label: '移動', icon: '📁', onSelect: () => void openMove([{ key: target.key, isFolder: target.isFolder }]) },
       { type: 'separator' },
-      { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void requestDelete([{ key: target.key, isFolder: target.isFolder }]) }
+      { label: '刪除', icon: '🗑️', danger: true, onSelect: () => void handleDelete([{ key: target.key, isFolder: target.isFolder }]) }
     ];
   }, [menu.target, selection.selectionMode, selection.selectedCount, files]);
 
@@ -307,12 +287,12 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selection.selectionMode) {
         event.preventDefault();
-        void requestDelete(selection.selectedItems);
+        void handleDelete(selection.selectedItems);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [anyModalOpen, isAdmin, selection, filteredFolders.length, filteredFiles.length, requestDelete]);
+  }, [anyModalOpen, isAdmin, selection, filteredFolders.length, filteredFiles.length, handleDelete]);
 
   const hasItems = files.length > 0 || folders.length > 0;
   const hasSearchQuery = Boolean(searchQuery.trim());
@@ -326,7 +306,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
         <>
           <button type="button" onClick={() => setTrashOpen(true)} aria-label="開啟垃圾桶" title="垃圾桶"
             className="fixed right-5 z-40 flex size-14 cursor-pointer items-center justify-center rounded-full border border-surface-600 bg-surface-900 text-primary-200 shadow-lg transition-colors hover:border-primary-400 hover:bg-surface-800"
-            style={{ bottom: `calc(${selection.selectedCount || pendingDelete ? '7rem' : '1.5rem'} + env(safe-area-inset-bottom, 0px))` }}>
+            style={{ bottom: `calc(${selection.selectedCount ? '7rem' : '1.5rem'} + env(safe-area-inset-bottom, 0px))` }}>
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           <TrashPanel open={trashOpen} revision={trashRevision} authorizedFetch={authorizedFetch} onClose={() => setTrashOpen(false)} onChanged={refreshTrash} confirm={confirm} />
@@ -538,11 +518,9 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       <SelectionToolbar
         count={selection.selectedCount}
         onMove={() => void openMove(selection.selectedItems)}
-        onDelete={() => void requestDelete(selection.selectedItems)}
+        onDelete={() => void handleDelete(selection.selectedItems)}
         onClear={selection.clear}
       />
-
-      <UndoToast open={Boolean(pendingDelete)} count={pendingDelete?.items.length ?? 0} onUndo={undoDelete} />
 
       <DropzoneOverlay
         active={dropActive && isAdmin}

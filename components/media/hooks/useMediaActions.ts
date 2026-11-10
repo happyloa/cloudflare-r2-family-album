@@ -12,6 +12,7 @@ type UseMediaActionsProps = {
     init?: RequestInit,
   ) => Promise<Response>;
   requestAdminToken: (promptMessage?: string) => Promise<boolean>;
+  confirm: (options: { title?: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
   pushMessage: (text: string, tone: MessageTone) => void;
   loadMedia: (prefix?: string, options?: { silent?: boolean }) => Promise<void>;
   removeLocalItems: (items: BatchItem[]) => void;
@@ -73,6 +74,7 @@ function readConfirmedRename(data: unknown, isFolder: boolean): string | null {
 export function useMediaActions({
   authorizedFetch,
   requestAdminToken,
+  confirm,
   pushMessage,
   loadMedia,
   removeLocalItems,
@@ -223,9 +225,29 @@ export function useMediaActions({
     return false;
   };
 
-  // 把刪除送到伺服器（樂觀移除與 Undo 由呼叫端負責，這裡不再動本地清單或顯示成功訊息）
-  const commitDeleteOnServer = async (items: BatchItem[]) => {
+  // 確認後立即送出：媒體移入垃圾桶（保留期內可還原），資料夾解散後內容上移一層。
+  const handleDelete = async (items: BatchItem[]) => {
     if (items.length === 0) return;
+    if (items.length > MAX_BATCH_ITEMS) {
+      pushMessage(`每批最多刪除 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
+      return;
+    }
+    if (!(await requestAdminToken("請輸入管理密碼以刪除項目"))) return;
+
+    const folderCount = items.filter((item) => item.isFolder).length;
+    const fileCount = items.length - folderCount;
+    const folderNotice = "資料夾內容會移到上一層（不會被刪除），資料夾移除後無法還原。";
+    const confirmed = await confirm({
+      title: "刪除項目",
+      message: fileCount === 0
+        ? `將移除資料夾？${folderNotice}`
+        : `將 ${fileCount} 個媒體移入垃圾桶？保留期內可從垃圾桶還原。${folderCount ? folderNotice : ''}`,
+      confirmLabel: "確定",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    removeLocalItems(items);
     try {
       for (let offset = 0; offset < items.length; offset += MAX_TRASH_ITEMS_PER_REQUEST) {
         const response = await authorizedFetch("/api/media", {
@@ -239,6 +261,12 @@ export function useMediaActions({
           return;
         }
       }
+      pushMessage(
+        fileCount === 0
+          ? "已移除資料夾，內容已移到上一層"
+          : `已將 ${fileCount} 個媒體移入垃圾桶${folderCount ? "，並移除資料夾" : ""}`,
+        "success",
+      );
       void refreshUsage(true);
       refreshListing();
     } catch {
@@ -256,6 +284,6 @@ export function useMediaActions({
     openRename,
     handleRename,
     handleMove,
-    commitDeleteOnServer,
+    handleDelete,
   };
 }
