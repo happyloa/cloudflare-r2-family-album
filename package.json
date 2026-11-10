@@ -8,8 +8,8 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
-    "workerd@1.20261101.1": true,
-    "workerd@1.20261104.1": true
+    "workerd@1.20261103.1": true,
+    "workerd@1.20261110.1": true
   },
   "scripts": {
     "dev": "vite dev --port 3000",
@@ -41,7 +41,7 @@
     "vinext": "^1.4.4"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.67.0",
+    "@cloudflare/vite-plugin": "^1.68.0",
     "@playwright/test": "^1.65.0",
     "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/dom": "^10.4.2",
@@ -56,9 +56,9 @@
     "postcss": "^8.5.32",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6",
+    "vite": "^8.3.7",
     "vitest": "^5.1.0",
-    "wrangler": "^4.158.0"
+    "wrangler": "^4.160.0"
   },
   "overrides": {
     "postcss": "$postcss",
