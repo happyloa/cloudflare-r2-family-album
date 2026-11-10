@@ -398,11 +398,17 @@ test('a rejected password shows the remaining attempts above the open dialog', a
   const toast = page.getByRole('status').filter({ hasText: '還有 4 次機會' });
   await expect(toast).toBeVisible();
   await expect(page.getByRole('dialog')).toBeVisible();
-  // Visibility alone ignores stacking; the toast must be the topmost element where it is drawn.
-  await expect.poll(() => toast.evaluate(element => {
+  // Visibility alone ignores stacking. The toast must be painted on top, yet let clicks through
+  // to the controls it covers, such as the close button of a preview.
+  await expect.poll(() => toast.evaluate((element: HTMLElement) => {
     const box = element.getBoundingClientRect();
-    return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
-  })).toBe(true);
+    const hit = () => element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    const capturesClicks = hit();
+    element.style.pointerEvents = 'auto';
+    const paintedOnTop = hit();
+    element.style.pointerEvents = '';
+    return { paintedOnTop, capturesClicks };
+  })).toEqual({ paintedOnTop: true, capturesClicks: false });
 });
 
 test('upload, then delete moves media to the trash only after confirmation', async ({ page }) => {

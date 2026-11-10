@@ -113,6 +113,8 @@ function isSameOrDescendantPath(path: string, ancestor: string) {
 
 // 不用 String.replace：資料夾名稱可含 `$`，會被當成取代樣式（`$$`、`$&`）而改寫目的地。
 function swapKeyPrefix(key: string, sourcePrefix: string, targetPrefix: string) {
+  // 列出的 key 不在來源前綴下時寧可中止，也不要切出錯的目的地再刪掉來源。
+  if (!key.startsWith(sourcePrefix)) throw new Error("Listed key is outside the source folder");
   return targetPrefix + key.slice(sourcePrefix.length);
 }
 

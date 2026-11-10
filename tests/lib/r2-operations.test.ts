@@ -102,6 +102,13 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(Object.fromEntries(storage)).toEqual({ "$'/": 0, "$'/photo.jpg": 1 });
   });
 
+  it('refuses a folder key whose listing prefix differs instead of writing truncated names', async () => {
+    storage.set('a/photo.jpg', 1); storage.set('t/', 0);
+    await expect(renameFolder('a/ / /', 'b')).rejects.toThrow();
+    await expect(moveFolder('a/ / /', 't')).rejects.toThrow();
+    expect(Object.fromEntries(storage)).toEqual({ 'a/photo.jpg': 1, 't/': 0 });
+  });
+
   it('dissolves a folder while preserving its photos and resolving name conflicts', async () => {
     storage.set('photo.jpg', 1); storage.set('trip/', 0); storage.set('trip/photo.jpg', 2);
     storage.set('trip/child/video.mp4', 3);
