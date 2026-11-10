@@ -61,10 +61,16 @@ try {
   releaseDelete();
   const responses = await Promise.all([first, second, third]);
   assert.equal(responses[0].status, 200);
-  assert.equal(responses[1].status, 404);
   assert.equal(responses[2].status, 200);
-  assert.ok([...storage.values()].includes('C-unique'), 'a delayed deletion must preserve the new content');
+  // The two queued renames open separate connections and can reach the coordinator in either order.
+  // Both orders must run after the first rename finishes and keep the new content exactly once.
+  if (responses[1].status === 404) assert.equal(storage.get('a.jpg'), 'C-unique');
+  else {
+    assert.equal(responses[1].status, 200);
+    assert.equal(storage.get('d.jpg'), 'C-unique', 'a queued rename must not copy the file the first rename was moving');
+  }
   assert.equal(storage.get('b.jpg'), 'A-original');
+  assert.equal(storage.size, 2);
 
   // Exercise real routing, authentication, signing and mock S3, beyond browser route mocks.
   assert.equal((await api('/api/media', 'POST', { action: 'create-folder', name: 'trip' })).status, 200);
