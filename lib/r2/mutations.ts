@@ -6,18 +6,16 @@ import { getDepth, hasPeriodOnlyPathSegment, isPeriodOnlyPathSegment, normalizeP
 import {
   FolderItem,
   MediaFile,
-  buildObjectUrl,
   buildFolderKey,
   collectKeys,
   copyObjectWithinBucket,
   deleteObjects,
   encodeKeyForUrl,
-  getEnv,
   inferType,
   listDirectEntries,
-  signedFetch,
   objectExists,
   prefixHasObjects,
+  putObject,
   R2ActionError,
 } from "./core";
 import { UPLOAD_ID_PREFIX } from "../media-name";
@@ -123,10 +121,9 @@ function swapKeyPrefix(key: string, sourcePrefix: string, targetPrefix: string) 
 
 // 分批複製，任何一批只要有一個失敗，就嘗試刪除這批（含同批次裡其他已成功）以及
 // 前面批次已成功複製的目的地物件，再往上拋出原本的錯誤；來源一律保留。
-// 回滾只是盡力而為：刪除本身也是一次外部請求，失敗會被忽略。若失敗原因是用完
-// Workers 每次請求的外部請求上限，回滾必定也失敗，目的地會留下部分副本：之後改名
-// 或移動到同一位置會被「目的地已存在」的檢查回 409，解散則會把殘留副本當成既有
-// 檔名另外編號，都需要手動清理。
+// 回滾只是盡力而為，刪除失敗會被忽略，目的地會留下部分副本：之後改名或移動到
+// 同一位置會被「目的地已存在」的檢查回 409，解散則會把殘留副本當成既有檔名另外
+// 編號，都需要手動清理。
 // 用 allSettled 而非 all，確保回滾前一定等到同批次所有複製都真正結束，
 // 不會漏掉跟失敗項目同時仍在進行、稍後才完成的複製。
 async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: string }[]) {
@@ -135,7 +132,7 @@ async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: strin
   for (let offset = 0; offset < tasks.length; offset += COPY_CONCURRENCY) {
     const batch = tasks.slice(offset, offset + COPY_CONCURRENCY);
     const results = await Promise.allSettled(
-      batch.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey, { requireAbsentDestination: true })),
+      batch.map(({ sourceKey, targetKey }) => copyObjectWithinBucket(sourceKey, targetKey)),
     );
 
     results.forEach((result, index) => {
@@ -284,26 +281,12 @@ export async function uploadFilesToR2(
 
   const results = await Promise.allSettled(
     prepared.map(async ({ file, contentType, key }) => {
-      const url = buildObjectUrl(key);
-      const response = await signedFetch(url, {
-        method: "PUT",
-        // File 是 Blob，可直接交給 fetch 串流處理，避免再複製整個檔案到 Worker 記憶體。
-        body: file,
-        headers: {
-          // 只使用 server 驗證過的 MIME，不能信任 client 宣告的 File.type。
-          "Content-Type": contentType,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to upload file: ${response.status} ${response.statusText}`,
-        );
-      }
+      // 只使用 server 驗證過的 MIME，不能信任 client 宣告的 File.type。
+      await putObject(key, file, contentType);
 
       return {
         key,
-        url: encodeKeyForUrl(key, getEnv().R2_PUBLIC_BASE),
+        url: encodeKeyForUrl(key),
         type: inferType(key, contentType),
         size: file.size,
         lastModified: new Date().toISOString(),
@@ -344,17 +327,7 @@ export async function createFolder(prefix: string, name: string) {
   const folderKey = `${buildFolderKey(folderPath)}`;
   await assertFolderDestinationAvailable(folderPath);
 
-  const url = buildObjectUrl(folderKey);
-  const response = await signedFetch(url, {
-    method: "PUT",
-    body: new Uint8Array(),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to create folder: ${response.status} ${response.statusText}`,
-    );
-  }
+  await putObject(folderKey, new Uint8Array());
 
   clearUsageCache();
   return { key: folderPath, name: normalizedName } satisfies FolderItem;
@@ -366,16 +339,13 @@ export async function createFolder(prefix: string, name: string) {
 async function relocateFile(sourceKey: string, targetKey: string): Promise<MediaFile> {
   if (sourceKey !== targetKey) {
     await assertFileDestinationDoesNotConflictWithFolder(targetKey);
-    await copyObjectWithinBucket(sourceKey, targetKey, { requireAbsentDestination: true });
-    const response = await signedFetch(buildObjectUrl(sourceKey), { method: "DELETE" });
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete source file: ${response.status} ${response.statusText}`);
-    }
+    await copyObjectWithinBucket(sourceKey, targetKey);
+    await deleteObjects([sourceKey]);
     clearUsageCache();
   }
   return {
     key: targetKey,
-    url: encodeKeyForUrl(targetKey, getEnv().R2_PUBLIC_BASE),
+    url: encodeKeyForUrl(targetKey),
     type: inferType(targetKey),
   };
 }

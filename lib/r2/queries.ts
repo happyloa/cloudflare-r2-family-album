@@ -3,12 +3,9 @@ import {
   MediaFile,
   MediaListing,
   buildFolderKey,
-  buildListUrl,
   encodeKeyForUrl,
-  getEnv,
   inferType,
-  parseListResult,
-  signedFetch,
+  listPage,
 } from "./core";
 import { isTrashPath } from '../trash-policy';
 import { normalizePath } from '../path';
@@ -37,28 +34,15 @@ export async function listMedia(prefix = "", options: ListMediaOptions = {}): Pr
   if (isTrashPath(normalizedPrefix)) throw new R2ActionError('垃圾桶須由管理模式查看', 403);
   const searchPrefix = buildFolderKey(normalizedPrefix);
 
-  const response = await signedFetch(
-    buildListUrl(searchPrefix, {
-      continuationToken: options.cursor,
-      delimiter: "/",
-      maxKeys: options.limit,
-    }).toString(),
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Failed to list objects: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const { folders, contents, nextContinuationToken } = parseListResult(
-    await response.text(),
-    searchPrefix,
-    true,
-  );
+  const { folders, contents, nextCursor } = await listPage(searchPrefix, {
+    cursor: options.cursor,
+    delimiter: "/",
+    limit: options.limit,
+  });
 
   const files: MediaFile[] = contents.filter(item => !isTrashPath(item.key)).map((item) => ({
     key: item.key,
-    url: encodeKeyForUrl(item.key, getEnv().R2_PUBLIC_BASE),
+    url: encodeKeyForUrl(item.key),
     type: inferType(item.key),
     size: item.size,
     lastModified: item.lastModified,
@@ -68,7 +52,7 @@ export async function listMedia(prefix = "", options: ListMediaOptions = {}): Pr
     prefix: normalizedPrefix,
     folders: folders.filter(folder => !isTrashPath(folder.key)),
     files,
-    nextCursor: nextContinuationToken ?? null,
+    nextCursor: nextCursor ?? null,
   } satisfies MediaListing;
 }
 
@@ -93,29 +77,14 @@ export async function calculateBucketUsage(force = false): Promise<BucketUsage> 
 }
 
 async function scanBucketUsage(): Promise<BucketUsage> {
-  let continuationToken: string | undefined;
+  let cursor: string | undefined;
   let totalBytes = 0;
 
   do {
-    const listUrl = buildListUrl("", { continuationToken });
-    const response = await signedFetch(listUrl.toString());
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to calculate bucket usage: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const { contents, nextContinuationToken } = parseListResult(
-      await response.text(),
-      "",
-      false,
-      { includePrefixObject: true },
-    );
-
-    totalBytes += contents.reduce((sum, item) => sum + (item.size ?? 0), 0);
-    continuationToken = nextContinuationToken;
-  } while (continuationToken);
+    const page = await listPage("", { cursor, includePrefixObject: true });
+    totalBytes += page.contents.reduce((sum, item) => sum + item.size, 0);
+    cursor = page.nextCursor;
+  } while (cursor);
 
   return { totalBytes } satisfies BucketUsage;
 }

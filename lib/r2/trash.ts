@@ -1,7 +1,7 @@
 import {
-  type MediaFile, R2ActionError, buildListUrl, collectKeys,
-  copyObjectWithinBucket, deleteObjects, encodeKeyForUrl, getEnv, inferType,
-  objectExists, parseListResult, signedFetch,
+  type MediaFile, R2ActionError, collectKeys,
+  copyObjectWithinBucket, deleteObjects, encodeKeyForUrl, inferType,
+  listPage, objectExists,
 } from './core';
 import { hasPeriodOnlyPathSegment, getDepth, normalizePath } from '../path';
 import { MAX_FOLDER_DEPTH } from '../constants';
@@ -25,7 +25,7 @@ export async function trashFiles(keys: string[], now = Date.now()) {
   for (const { originalKey, trashKey } of tasks) {
     // 重試已完成的移入操作時，不新增空項目或重複副本。
     if (!await objectExists(originalKey)) continue;
-    await copyObjectWithinBucket(originalKey, trashKey, { requireAbsentDestination: true });
+    await copyObjectWithinBucket(originalKey, trashKey);
     // 複製已確認後才移除原物件；若刪除失敗，保留可救回的副本。
     await deleteObjects([originalKey]);
   }
@@ -33,20 +33,16 @@ export async function trashFiles(keys: string[], now = Date.now()) {
 }
 
 export async function listTrash(options: { cursor?: string; limit?: number } = {}) {
-  const response = await signedFetch(buildListUrl(TRASH_PREFIX, {
-    continuationToken: options.cursor, maxKeys: options.limit ?? 100,
-  }).toString());
-  if (!response.ok) throw new Error('無法讀取垃圾桶');
-  const parsed = parseListResult(await response.text(), TRASH_PREFIX, false);
+  const parsed = await listPage(TRASH_PREFIX, { cursor: options.cursor, limit: options.limit ?? 100 });
   const files: TrashMedia[] = parsed.contents.flatMap(item => {
     const record = parseTrashKey(item.key);
     if (!record) return [];
-    return [{ ...item, url: encodeKeyForUrl(item.key, getEnv().R2_PUBLIC_BASE),
+    return [{ ...item, url: encodeKeyForUrl(item.key),
       type: inferType(record.originalKey), originalKey: record.originalKey,
       trashedAt: new Date(record.trashedAt).toISOString(), expiresAt: new Date(record.expiresAt).toISOString(),
     }];
   });
-  return { files, nextCursor: parsed.nextContinuationToken ?? null, retentionDays: getTrashRetentionDays() };
+  return { files, nextCursor: parsed.nextCursor ?? null, retentionDays: getTrashRetentionDays() };
 }
 
 function requireTrashRecord(key: string) {
@@ -63,10 +59,10 @@ export async function restoreTrashFile(key: string, now = Date.now()) {
     throw new R2ActionError('原位置已有同名項目，請先移動或重新命名該項目', 409);
   }
   // R2 的目的地條件在提交時檢查，避免同時還原覆寫另一個檔案。
-  await copyObjectWithinBucket(key, record.originalKey, { requireAbsentDestination: true });
+  await copyObjectWithinBucket(key, record.originalKey);
   await deleteObjects([key]);
   clearUsageCache();
-  return { key: record.originalKey, url: encodeKeyForUrl(record.originalKey, getEnv().R2_PUBLIC_BASE), type: inferType(record.originalKey) } satisfies MediaFile;
+  return { key: record.originalKey, url: encodeKeyForUrl(record.originalKey), type: inferType(record.originalKey) } satisfies MediaFile;
 }
 
 export async function permanentlyDeleteTrashFile(key: string) {
@@ -80,17 +76,15 @@ export async function purgeExpiredTrash(now = Date.now()) {
   let cursor: string | undefined;
   let deleted = 0;
   for (let page = 0; page < 5; page++) {
-    const response = await signedFetch(buildListUrl(TRASH_PREFIX, { continuationToken: cursor, maxKeys: 100 }).toString());
-    if (!response.ok) throw new Error('無法讀取到期垃圾桶項目');
-    const result = parseListResult(await response.text(), TRASH_PREFIX, false);
+    const result = await listPage(TRASH_PREFIX, { cursor, limit: 100 });
     const expired = result.contents.filter(item => {
       const record = parseTrashKey(item.key);
       return record && record.expiresAt <= now;
     }).map(item => item.key);
     if (expired.length) { await deleteObjects(expired); deleted += expired.length; clearUsageCache(); }
     // 到期時間是 key 的第一段，後續頁面不會有更早到期的項目。
-    if (result.contents.some(item => { const record = parseTrashKey(item.key); return record && record.expiresAt > now; }) || !result.nextContinuationToken) break;
-    cursor = result.nextContinuationToken;
+    if (result.contents.some(item => { const record = parseTrashKey(item.key); return record && record.expiresAt > now; }) || !result.nextCursor) break;
+    cursor = result.nextCursor;
   }
   return deleted;
 }

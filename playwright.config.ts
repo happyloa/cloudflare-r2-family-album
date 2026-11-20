@@ -13,7 +13,7 @@ const devConfigPath = fileURLToPath(new URL('./.cache/e2e-worker/wrangler.json',
 if (!workerRuntime) {
   const source = unstable_readConfig({ config: './wrangler.jsonc' }, { preserveOriginalMain: true });
   mkdirSync(dirname(devConfigPath), { recursive: true });
-  // Keep the production runtime settings, with only local assets and fake R2 credentials.
+  // Keep the production runtime settings, with local assets and a simulated R2 bucket.
   const devConfig = JSON.stringify({
     name: 'album-e2e',
     main: resolve(dirname(fileURLToPath(import.meta.url)), source.main!),
@@ -21,6 +21,7 @@ if (!workerRuntime) {
     compatibility_flags: source.compatibility_flags,
     assets: source.assets,
     durable_objects: source.durable_objects,
+    r2_buckets: source.r2_buckets.map(bucket => ({ ...bucket, bucket_name: 'album-e2e-isolated' })),
     migrations: source.migrations,
     vars: testEnv,
   });

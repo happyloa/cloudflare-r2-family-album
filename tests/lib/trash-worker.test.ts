@@ -32,10 +32,10 @@ it('keeps public browsing outside the mutation queue and coordinates all writes'
 });
 
 it('awaits coordinated cleanup and reports failures to the scheduler', async () => {
-  coordinator.cleanup.mockResolvedValueOnce(7).mockRejectedValueOnce(new Error('simulated S3 failure'));
+  coordinator.cleanup.mockResolvedValueOnce(7).mockRejectedValueOnce(new Error('simulated R2 failure'));
   await worker.scheduled(controller, env);
   expect(console.log).toHaveBeenCalledWith(JSON.stringify({ event: 'trash_cleanup', deleted: 7 }));
-  await expect(worker.scheduled(controller, env)).rejects.toThrow('simulated S3 failure');
+  await expect(worker.scheduled(controller, env)).rejects.toThrow('simulated R2 failure');
 });
 
 it('serializes mutations and scheduled cleanup, releases failures and lets reads proceed', async () => {

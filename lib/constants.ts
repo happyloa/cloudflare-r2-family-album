@@ -4,7 +4,7 @@ export const MAX_FOLDER_DEPTH = 2;
 export const MAX_FOLDER_NAME_LENGTH = 30;
 export const MAX_BATCH_ITEMS = 200;
 export const MAX_MOVE_ITEMS_PER_REQUEST = 10;
-// 透過 S3 fetch 的外部請求保留在 Workers Free 的每次 50 個上限內。
+// 移動與刪除會逐項列表、讀出、寫入與刪除，每次請求的 R2 binding 呼叫要留在 Workers Free 的 1,000 次上限內。
 export const MAX_TRASH_ITEMS_PER_REQUEST = 10;
 
 // 貯體容量上限（純前端顯示用：上傳前的超額提示、容量條）。這是單一事實來源，

@@ -10,7 +10,7 @@ const root = new URL('../', import.meta.url);
 export const workerConfig = JSON.parse(readFileSync(new URL('dist/server/wrangler.json', root), 'utf8'));
 export const testBindings = parseEnv(readFileSync(new URL('tests/fixtures/runtime.env', root), 'utf8'));
 
-export function createIsolatedWorker(outboundService) {
+export function createIsolatedWorker() {
   const serverDirectory = fileURLToPath(new URL('dist/server/', root));
   const modulePaths = ['index.js', ...globSync('**/*.{js,mjs}', { cwd: serverDirectory }).filter(path => path !== 'index.js')];
   return new Miniflare(convertV4MiniflareOptions({
@@ -20,15 +20,14 @@ export function createIsolatedWorker(outboundService) {
     compatibilityDate: workerConfig.compatibility_date,
     compatibilityFlags: workerConfig.compatibility_flags,
     bindings: testBindings,
+    // In-memory simulated R2, separate from any real bucket.
+    r2Buckets: Object.fromEntries(workerConfig.r2_buckets.map(bucket => [bucket.binding, 'album-isolated'])),
     durableObjects: Object.fromEntries(workerConfig.durable_objects.bindings.map(binding => [
       binding.name, { className: binding.class_name, useSQLite: true },
     ])),
-    // No external fetch can leave this mock, including requests to unexpected hosts.
+    // R2 goes through the binding, so no request may leave the isolated Worker.
     outboundService: async request => {
-      if (new URL(request.url).hostname !== `${testBindings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`) {
-        throw new Error('Unexpected outbound URL in isolated Worker');
-      }
-      return outboundService(request);
+      throw new Error(`Unexpected outbound URL in isolated Worker: ${request.url}`);
     },
   }));
 }

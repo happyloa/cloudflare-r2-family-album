@@ -33,8 +33,6 @@
   "dependencies": {
     "@fontsource-variable/noto-sans-tc": "^5.3.1",
     "@vinext/cloudflare": "^1.4.0",
-    "aws4fetch": "^1.0.20",
-    "fast-xml-parser": "^5.12.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-server-dom-webpack": "^19.3.1",

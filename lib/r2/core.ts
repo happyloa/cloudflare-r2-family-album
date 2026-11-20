@@ -1,16 +1,8 @@
-import { AwsClient } from "aws4fetch";
-import { XMLParser } from "fast-xml-parser";
+import { env as workerEnv } from "cloudflare:workers";
 
-import { hasPeriodOnlyPathSegment, normalizePath } from "../path";
+import { normalizePath } from "../path";
 
 // ── 型別 ──
-
-type EnvKeys =
-  | "R2_ACCOUNT_ID"
-  | "R2_ACCESS_KEY_ID"
-  | "R2_SECRET_ACCESS_KEY"
-  | "R2_BUCKET_NAME"
-  | "R2_PUBLIC_BASE";
 
 export type MediaFile = {
   key: string;
@@ -42,78 +34,19 @@ export class R2ActionError extends Error {
   }
 }
 
-const processEnv = typeof process !== "undefined" ? process.env : undefined;
+// ── 設定 ──
 
-// 環境變數快取
-let cachedEnv: Record<EnvKeys, string> | null = null;
-
-/**
- * 惰性讀取並驗證必要的環境變數
- * 只在首次呼叫時進行驗證，之後使用快取值
- */
-export function getEnv(): Record<EnvKeys, string> {
-  if (cachedEnv) return cachedEnv;
-
-  const requiredVars: { key: EnvKeys; description: string }[] = [
-    { key: "R2_ACCOUNT_ID", description: "Cloudflare 帳戶 ID" },
-    { key: "R2_ACCESS_KEY_ID", description: "R2 Access Key" },
-    { key: "R2_SECRET_ACCESS_KEY", description: "R2 Secret Key" },
-    { key: "R2_BUCKET_NAME", description: "R2 Bucket 名稱" },
-    { key: "R2_PUBLIC_BASE", description: "公開存取的基底 URL" },
-  ];
-
-  const missing: string[] = [];
-  const entries: Partial<Record<EnvKeys, string>> = {};
-
-  for (const { key, description } of requiredVars) {
-    const value = processEnv?.[key];
-    if (!value) {
-      missing.push(`  - ${key}: ${description}`);
-    } else {
-      entries[key] = value;
-    }
-  }
-
-  if (missing.length > 0) {
-    const message = [
-      "缺少必要的環境變數，請確認已正確設定：",
-      "",
-      ...missing,
-      "",
-      "提示：請參考 .dev.vars.example 並建立 .dev.vars 設定",
-    ].join("\n");
-    throw new Error(message);
-  }
-
-  cachedEnv = entries as Record<EnvKeys, string>;
-  return cachedEnv;
+/** wrangler.jsonc 的 r2_buckets 綁定。本機開發與測試使用模擬 bucket，不會連到正式資料。 */
+export function getBucket(): R2Bucket {
+  const bucket = (workerEnv as Partial<CloudflareEnv>).ALBUM_BUCKET;
+  if (!bucket) throw new Error("缺少 R2 綁定 ALBUM_BUCKET，請確認 wrangler.jsonc 的 r2_buckets 設定");
+  return bucket;
 }
 
-// 初始化 XML 解析器 (用於解析 R2 回傳的 XML)
-// 文字節點保持原字串：預設會把 007、1e3、0x1A 這類 Key 或 continuation token 轉成數字，
-// 也會去掉前後空白，得到的 key 就跟 R2 上的不同。Size 由 parseListResult 自行轉數字。
-const xmlParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: "",
-  textNodeName: "value",
-  parseTagValue: false,
-  trimValues: false,
-});
-
-let cachedClient: AwsClient | null = null;
-
-// 初始化並快取 AWS Client (aws4fetch)
-function getClient() {
-  if (cachedClient) return cachedClient;
-
-  cachedClient = new AwsClient({
-    accessKeyId: getEnv().R2_ACCESS_KEY_ID,
-    secretAccessKey: getEnv().R2_SECRET_ACCESS_KEY,
-    service: "s3",
-    region: "auto",
-  });
-
-  return cachedClient;
+export function getPublicBase() {
+  const value = typeof process !== "undefined" ? process.env.R2_PUBLIC_BASE : undefined;
+  if (!value) throw new Error("缺少環境變數 R2_PUBLIC_BASE（公開存取的基底 URL），請參考 .dev.vars.example");
+  return value;
 }
 
 // ── 路徑 / Key 建構 ──
@@ -123,141 +56,28 @@ export function buildFolderKey(path: string) {
   const normalized = normalizePath(path);
   return normalized ? `${normalized}/` : "";
 }
+
 function encodeR2PathSegment(segment: string) {
   if (segment === ".") return "%2E";
   if (segment === "..") return "%2E%2E";
   return encodeURIComponent(segment);
 }
 
-export function encodeR2ObjectKey(key: string) {
-  return key.split("/").map(encodeR2PathSegment).join("/");
-}
-
-function assertSafeEndpointObjectKey(key: string) {
-  if (hasPeriodOnlyPathSegment(key)) {
-    throw new Error("Period-only R2 key segments cannot be addressed safely");
-  }
-}
-
-
 // 將 Key 編碼為公開 URL
-export function encodeKeyForUrl(key: string, base: string) {
+export function encodeKeyForUrl(key: string, base = getPublicBase()) {
   const url = new URL(base);
   const basePath = url.pathname.replace(/\/+$/, "");
-  const encodedKey = encodeR2ObjectKey(key);
+  const encodedKey = key.split("/").map(encodeR2PathSegment).join("/");
   return `${url.origin}${basePath}/${encodedKey}${url.search}`;
 }
 
-// 編碼用於 Copy Source 的 Header
-function encodeCopySource(bucket: string, key: string) {
-  return `/${encodeURIComponent(bucket)}/${encodeR2ObjectKey(key)}`;
-}
-
-// 跳脫 XML 特殊字元
-function escapeXml(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-// 確保值為陣列
-function ensureArray<T>(value: T | T[] | undefined): T[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
-}
-
-// 讀取 XML 文字節點
-function readTextNode(value: unknown): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (
-    typeof value === "object" &&
-    "value" in (value as Record<string, unknown>)
-  ) {
-    const text = (value as { value?: unknown }).value;
-    if (text === undefined || text === null) return "";
-    return String(text);
-  }
-  return "";
-}
-
-// ── 簽名請求 / 端點 ──
-
-// 執行簽名請求
-export async function signedFetch(input: string, init?: RequestInit) {
-  const client = getClient();
-  return client.fetch(input, init);
-}
-
-// 建構 R2 API 端點 URL
-export function buildEndpointPath(path: string) {
-  const endpoint = `https://${getEnv().R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-  return new URL(path, endpoint).toString();
-}
-
-export function buildObjectUrl(key: string) {
-  assertSafeEndpointObjectKey(key);
-  const env = getEnv();
-  const endpoint = `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-  const bucket = encodeURIComponent(env.R2_BUCKET_NAME);
-  return `${endpoint}/${bucket}/${encodeR2ObjectKey(key)}`;
-}
-
-// 建構 List Objects URL
-export function buildListUrl(
-  prefix: string,
-  options: {
-    continuationToken?: string;
-    delimiter?: string;
-    maxKeys?: number;
-  } = {},
-) {
-  const url = new URL(buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}`));
-  url.searchParams.set("list-type", "2");
-  url.searchParams.set("prefix", prefix);
-  if (options.delimiter) {
-    url.searchParams.set("delimiter", options.delimiter);
-  }
-  if (options.maxKeys) {
-    url.searchParams.set("max-keys", String(options.maxKeys));
-  }
-  if (options.continuationToken) {
-    url.searchParams.set("continuation-token", options.continuationToken);
-  }
-  return url;
-}
-
 const VIDEO_FILE_EXTENSIONS = new Set([
-  "3g2",
-  "3gp",
-  "3gpp",
-  "asf",
-  "avi",
-  "f4v",
-  "flv",
-  "m2ts",
-  "m4v",
-  "mkv",
-  "mov",
-  "mp4",
-  "mpeg",
-  "mpg",
-  "mts",
-  "ogm",
-  "ogv",
-  "qt",
-  "ts",
-  "webm",
-  "wmv",
+  "3g2", "3gp", "3gpp", "asf", "avi", "f4v", "flv", "m2ts", "m4v", "mkv", "mov",
+  "mp4", "mpeg", "mpg", "mts", "ogm", "ogv", "qt", "ts", "webm", "wmv",
 ]);
 
 // 根據已儲存的 Content-Type 或副檔名推斷媒體類型。
-// ListObjectsV2 不會回傳 Content-Type，因此列表及重新命名後以副檔名作為回退。
+// 列表不會回傳 Content-Type，因此列表及重新命名後以副檔名作為回退。
 export function inferType(
   key: string,
   contentType?: string,
@@ -268,102 +88,74 @@ export function inferType(
   return extension && VIDEO_FILE_EXTENSIONS.has(extension) ? "video" : "image";
 }
 
-// ── List 解析與批次操作 ──
+// ── 列表 ──
 
-export type ParsedListResult = {
+export type ListPage = {
   folders: FolderItem[];
   contents: {
     key: string;
-    size: number | undefined;
-    lastModified: string | undefined;
+    size: number;
+    lastModified: string;
   }[];
-  isTruncated: boolean;
-  nextContinuationToken?: string;
+  nextCursor?: string;
 };
 
-// 解析 List Objects XML 回傳
-export function parseListResult(
-  xml: string,
-  searchPrefix: string,
-  includeFolders: boolean,
-  options: { includePrefixObject?: boolean } = {},
-): ParsedListResult {
-  const parsed = xmlParser.parse(xml).ListBucketResult;
+/**
+ * 讀一頁列表。folders 只在指定 delimiter 時才有；
+ * 預設排除與前綴相同的資料夾標記本身。
+ */
+export async function listPage(
+  prefix: string,
+  options: { cursor?: string; delimiter?: string; limit?: number; includePrefixObject?: boolean } = {},
+): Promise<ListPage> {
+  let result: R2Objects;
+  try {
+    result = await getBucket().list({
+      prefix,
+      cursor: options.cursor,
+      delimiter: options.delimiter,
+      limit: options.limit,
+    });
+  } catch (error) {
+    // 改用 binding 前發出的分頁游標格式不同，前端重新整理即可取得新的游標。
+    if (options.cursor) throw new R2ActionError("分頁已失效，請重新整理頁面", 400);
+    throw error;
+  }
 
-  const folders: FolderItem[] = includeFolders
-    ? ensureArray(parsed.CommonPrefixes).map((item: Record<string, unknown>) => {
-        const prefixKey = readTextNode(item.Prefix);
-        const relativeKey = prefixKey.replace(/\/$/, "");
-        const name = relativeKey.split("/").pop() ?? relativeKey;
-        return { key: relativeKey, name } as FolderItem;
-      })
-    : [];
+  const folders = result.delimitedPrefixes.map((prefixKey) => {
+    const key = prefixKey.replace(/\/$/, "");
+    return { key, name: key.split("/").pop() ?? key } satisfies FolderItem;
+  });
+  const contents = result.objects
+    .filter((object) => options.includePrefixObject || object.key !== prefix)
+    .map((object) => ({
+      key: object.key,
+      size: object.size,
+      lastModified: object.uploaded.toISOString(),
+    }));
 
-  const contents = ensureArray(parsed.Contents)
-    .map((item: Record<string, unknown>) => {
-      const key = readTextNode(item.Key);
-      if (!key || (!options.includePrefixObject && key === searchPrefix)) {
-        return null;
-      }
-
-      const sizeText = readTextNode(item.Size);
-      const lastModified = readTextNode(item.LastModified) || undefined;
-
-      return {
-        key,
-        size: sizeText ? Number(sizeText) : undefined,
-        lastModified,
-      };
-    })
-    .filter(
-      (
-        item,
-      ): item is {
-        key: string;
-        size: number | undefined;
-        lastModified: string | undefined;
-      } => Boolean(item),
-    );
-
-  const isTruncated = readTextNode(parsed.IsTruncated) === "true";
-  const nextContinuationToken = isTruncated
-    ? readTextNode(parsed.NextContinuationToken) || undefined
-    : undefined;
-
-  return { folders, contents, isTruncated, nextContinuationToken };
+  return { folders, contents, nextCursor: result.truncated ? result.cursor : undefined };
 }
 
 async function listPrefixEntries(
   prefix: string,
-  options: { includePrefixObject?: boolean; recursive?: boolean; includeFolders?: boolean },
+  options: { includePrefixObject?: boolean; recursive?: boolean },
 ) {
   const keys: string[] = [];
   const folders: string[] = [];
-  let continuationToken: string | undefined;
+  let cursor: string | undefined;
   const searchPrefix = buildFolderKey(normalizePath(prefix));
 
   do {
-    const url = buildListUrl(searchPrefix, {
-      continuationToken,
-      ...(options.recursive === false ? { delimiter: '/' } : {}),
+    const page = await listPage(searchPrefix, {
+      cursor,
+      includePrefixObject: options.includePrefixObject,
+      ...(options.recursive === false ? { delimiter: "/" } : {}),
     });
-    const response = await signedFetch(url.toString());
-    if (!response.ok) {
-      throw new Error(
-        `Failed to list folder for processing: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const { folders: pageFolders, contents, nextContinuationToken } = parseListResult(
-      await response.text(),
-      searchPrefix,
-      options.includeFolders ?? false,
-      options,
-    );
-    keys.push(...contents.map((item) => item.key));
-    folders.push(...pageFolders.map((folder) => folder.key));
-    continuationToken = nextContinuationToken;
-  } while (continuationToken);
+    keys.push(...page.contents.map((item) => item.key));
+    folders.push(...page.folders.map((folder) => folder.key));
+    cursor = page.nextCursor;
+  } while (cursor);
 
   return { keys, folders };
 }
@@ -378,96 +170,52 @@ export async function collectKeys(
 
 // 只列出資料夾的直接子項：物件 key（含資料夾標記本身）與子資料夾路徑（不含結尾 /）。
 export async function listDirectEntries(prefix: string) {
-  return listPrefixEntries(prefix, { includePrefixObject: true, recursive: false, includeFolders: true });
+  return listPrefixEntries(prefix, { includePrefixObject: true, recursive: false });
 }
 
 // 只需知道前綴下有沒有物件時只讀一筆，不把整個子樹列完。
 export async function prefixHasObjects(prefix: string) {
   const searchPrefix = buildFolderKey(normalizePath(prefix));
-  const response = await signedFetch(buildListUrl(searchPrefix, { maxKeys: 1 }).toString());
-  if (!response.ok) {
-    throw new Error(`Failed to list folder for processing: ${response.status} ${response.statusText}`);
-  }
-  return parseListResult(await response.text(), searchPrefix, false, { includePrefixObject: true }).contents.length > 0;
+  return (await listPage(searchPrefix, { limit: 1, includePrefixObject: true })).contents.length > 0;
 }
+
+// ── 物件操作 ──
 
 export async function objectExists(key: string) {
-  const response = await signedFetch(buildObjectUrl(key), { method: "HEAD" });
-  if (response.status === 404) return false;
-  if (!response.ok) {
-    throw new Error(`Failed to check object: ${response.status} ${response.statusText}`);
-  }
-  return true;
+  return (await getBucket().head(key)) !== null;
 }
 
-// 批次刪除物件
+export async function putObject(key: string, body: Blob | Uint8Array, contentType?: string) {
+  await getBucket().put(key, body, contentType ? { httpMetadata: { contentType } } : undefined);
+}
+
+// 批次刪除物件（binding 每次最多 1000 個 key）
 export async function deleteObjects(keys: string[]) {
-  const keysToDelete = [...keys]; // 複製陣列避免修改原陣列
-
-  while (keysToDelete.length > 0) {
-    const batch = keysToDelete.splice(0, 1000);
-    const deleteUrl = buildEndpointPath(`/${getEnv().R2_BUCKET_NAME}?delete`);
-    const deleteBody = `<Delete>${batch
-      .map((key) => `<Object><Key>${escapeXml(key)}</Key></Object>`)
-      .join("")}</Delete>`;
-
-    const deleteResponse = await signedFetch(deleteUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/xml",
-      },
-      body: deleteBody,
-    });
-
-    const resultXml = await deleteResponse.text();
-    if (resultXml.trim()) {
-      const deleteResult = xmlParser.parse(resultXml).DeleteResult;
-      const errors = ensureArray(deleteResult?.Error);
-      if (errors.length) {
-        throw new Error("R2 reported one or more failed object deletions");
-      }
-    }
-
-    if (!deleteResponse.ok) {
-      throw new Error(
-        `Failed to delete objects: ${deleteResponse.status} ${deleteResponse.statusText}`,
-      );
-    }
-
+  for (let offset = 0; offset < keys.length; offset += 1000) {
+    await getBucket().delete(keys.slice(offset, offset + 1000));
   }
 }
 
-// 在 Bucket 內複製物件
-export async function copyObjectWithinBucket(sourceKey: string, targetKey: string, options: { requireAbsentDestination?: boolean } = {}) {
-  assertSafeEndpointObjectKey(sourceKey);
-  const copyUrl = buildObjectUrl(targetKey);
-  const copyResponse = await signedFetch(copyUrl, {
-    method: "PUT",
-    headers: {
-      "x-amz-copy-source": encodeCopySource(getEnv().R2_BUCKET_NAME, sourceKey),
-      ...(options.requireAbsentDestination ? { 'cf-copy-destination-if-none-match': '*' } : {}),
-    },
-  });
-
+/**
+ * 在 Bucket 內複製物件，目的地已存在時不覆寫。
+ * binding 沒有伺服器端複製：讀出來源後直接把內容串流寫入目的地，並保留 Content-Type 等中繼資料。
+ */
+export async function copyObjectWithinBucket(sourceKey: string, targetKey: string) {
+  const bucket = getBucket();
+  const source = await bucket.get(sourceKey);
   // 改名、移動、解散、移入與還原垃圾桶都共用這裡，訊息不限定垃圾桶情境。
-  if (options.requireAbsentDestination && responseIsConflict(copyResponse.status)) {
-    throw new R2ActionError('目的地已有同名項目，請重新整理後再試', 409);
-  }
-  if (options.requireAbsentDestination && copyResponse.status === 404) {
-    throw new R2ActionError('項目已不存在，請重新整理後再試', 404);
-  }
+  if (!source) throw new R2ActionError("項目已不存在，請重新整理後再試", 404);
 
-  if (!copyResponse.ok) {
-    throw new Error(
-      `Failed to copy object: ${copyResponse.status} ${copyResponse.statusText}`,
-    );
-  }
-
-  // S3 CopyObject 可把錯誤放在 HTTP 200 的 XML 中；確認結果後才能刪除來源。
-  const result = xmlParser.parse(await copyResponse.text());
-  if (result.Error || !result.CopyObjectResult?.ETag) {
+  const copied = await bucket.put(targetKey, source.body, {
+    httpMetadata: source.httpMetadata,
+    customMetadata: source.customMetadata,
+    // 條件在寫入時檢查，避免同時進行的操作覆寫已存在的目的地。
+    onlyIf: new Headers({ "If-None-Match": "*" }),
+  });
+  if (!copied) throw new R2ActionError("目的地已有同名項目，請重新整理後再試", 409);
+  // 確認寫入的大小一致後才讓呼叫端刪除來源；不一致的副本由這裡移除，來源保留。
+  if (copied.size !== source.size) {
+    await bucket.delete(targetKey);
     throw new Error("R2 did not confirm the object copy");
   }
 }
-
-function responseIsConflict(status: number) { return status === 412 || status === 409; }

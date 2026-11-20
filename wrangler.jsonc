@@ -7,6 +7,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
   "workers_dev": true,
+  "r2_buckets": [{ "binding": "ALBUM_BUCKET", "bucket_name": "family-album" }],
   "durable_objects": {
     "bindings": [{ "name": "ALBUM_MUTATIONS", "class_name": "AlbumMutations" }]
   },
