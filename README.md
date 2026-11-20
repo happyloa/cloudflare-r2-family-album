@@ -32,7 +32,7 @@ npm run dev
 | `ADMIN_RATE_LIMIT_MAX_FAILURES` | 單一 IP 在 5 分鐘內的驗證失敗上限，預設 5 次 |
 | `MAX_IMAGE_SIZE_MB` | 圖片單檔上限，預設 10、最高 32 |
 | `MAX_VIDEO_SIZE_MB` | 影片單檔上限，預設與最高皆為 32 |
-| `TRASH_RETENTION_DAYS` | 垃圾桶保留天數，預設 15；可設 1–365，只套用到之後移入的媒體 |
+| `TRASH_RETENTION_DAYS` | 垃圾桶保留天數，預設 15；可設 1–365，只套用到之後移入的媒體。設定值無效時，刪除媒體與開啟垃圾桶都會失敗 |
 
 上傳限制由伺服器解析，管理介面透過受保護的 `GET /api/upload` 取得；請勿設定 `NEXT_PUBLIC_MAX_*`。
 
@@ -43,7 +43,7 @@ npm run dev
 | `npm run dev` | Vinext／Workers 開發服務 |
 | `npm run build` | 建置 Worker |
 | `npm run start` | 讀取 `.dev.vars`，本機預覽已建置 Worker |
-| `npm run typecheck` | Vinext 路由型別與 TypeScript 檢查 |
+| `npm run typecheck` | Worker 型別、Vinext 路由型別與 TypeScript 檢查 |
 | `npm run verify` | Worker 型別、相容性、型別、回歸測試、建置與隔離儲存整合測試 |
 | `npm run test:e2e` | 開發模式桌面／手機隔離測試 |
 | `npm run test:e2e:worker` | 已建置 Worker 的桌面／手機隔離測試 |
@@ -70,7 +70,7 @@ E2E 使用 `127.0.0.1:3100`、固定假憑證與本機媒體；開發模式另�
 
 依賴更新後若 npm 阻擋必要安裝腳本，先用 `npm install-scripts ls` 檢查，再核准對應版本。`package.json` 的 `allowScripts` 僅核准建置所需的 `esbuild` 與 `workerd` 版本。
 
-GitHub Verify 在推送 `main`、Pull Request 與手動觸發時執行，不負責部署。正式發佈由 Cloudflare Workers Builds 管理，Dashboard 設定為：
+GitHub Verify 在推送 `main`、以 `main` 為目標的 Pull Request 與手動觸發時執行，不負責部署。正式發佈由 Cloudflare Workers Builds 管理，Dashboard 設定為：
 
 - Production branch：`main`
 - Root directory、Build command：留空
@@ -91,14 +91,16 @@ GitHub Verify 在推送 `main`、Pull Request 與手動觸發時執行，不負�
 
 ## 使用限制
 
-- 每批最多 20 個檔案、共 32 MiB；介面以 MB 標示。支援 JPEG、PNG、WebP、GIF、AVIF、HEIC／HEIF、MP4、WebM、QuickTime，會驗證 MIME type 與檔案 signature。
-- 瀏覽器只嘗試壓縮 JPEG，結果較大時保留原檔；其他格式保留原檔及動畫。HEIC／HEIF、QuickTime 的預覽取決於瀏覽器，失敗時可另開檔案。
-- 資料夾最多兩層；介面每次最多選取 200 項，移動與刪除會分批送出，每次請求最多移動 10 項或把 10 個媒體移入垃圾桶。管理 API 的 JSON body 上限為 256 KiB。大型資料夾仍可能超過外部請求限制，失敗後應重新整理確認已完成的部分。
+- 每批最多 20 個檔案、共 32 MiB，以壓縮後的大小計算；介面以 MB 標示。支援 JPEG、PNG、WebP、GIF、AVIF、HEIC／HEIF、MP4、WebM、QuickTime，會驗證 MIME type 與檔案 signature。
+- 瀏覽器只嘗試壓縮 JPEG：長邊縮到 1920px 並轉成 WebP（不支援 WebP 編碼的瀏覽器改用 JPEG），結果較大時保留原檔。壓縮後的檔案不保留 EXIF，也不另存原圖。其他格式保留原檔及動畫，拍攝位置等中繼資料會跟著公開。HEIC／HEIF、QuickTime 的預覽取決於瀏覽器，失敗時可另開檔案。
+- 資料夾最多兩層；介面每次最多選取 200 項，移動與刪除會分批送出，每次請求最多移動 10 項，或刪除 10 項（媒體與資料夾合計）。管理 API 的 JSON body 上限為 256 KiB。大型資料夾仍可能超過外部請求限制，失敗後應重新整理確認已完成的部分。
 - 刪除確認後立即送出。媒體移入垃圾桶，保留期內可還原；刪除資料夾會把內容上移一層，不把內容移入垃圾桶，資料夾本身無法還原。
-- 10 GB 容量條只是前端提醒，並非伺服器配額或零費用保證。密碼限速未跨 Worker isolate 共用，R2 批次操作也不是交易，失敗時可能已有部分項目完成。
+- 10 GB 容量條只是前端提醒，並非伺服器配額或零費用保證。R2 批次操作也不是交易，失敗時可能已有部分項目完成。
+- 管理請求都經過 `ALBUM_MUTATIONS`，密碼限速的計數存在這個 Durable Object 的記憶體，重新啟動或部署後歸零。同時追蹤的來源超過 4096 個時，新來源要等舊紀錄到期才能驗證。
+- Workers Free 每日有 10 萬次請求額度，首頁與公開清單都會計入；用完後整站（含管理功能）要到 00:00 UTC（台灣 08:00）才恢復。
 
 ## 依賴維護
 
-`package.json` 保留安全覆寫：`postcss` 統一版本，`vendor/dynamic-import-glob` 以 tinyglobby 提供既有 glob 介面，`satori/fflate` 固定為已修補的 `fflate@0.7.5`。目前依賴的 Satori 仍使用 fflate 0.7 API 解壓 WOFF 字型，直接升至 0.8 會破壞相容性。移除覆寫前，需確認上游修補並通過相容性測試、`npm audit` 與完整驗證。
+`package.json` 保留安全覆寫：`postcss` 統一版本，`vendor/dynamic-import-glob` 以 tinyglobby 提供既有 glob 介面，`satori/fflate` 固定為已修補的 `fflate@0.7.5`。目前依賴的 Satori 仍使用 fflate 0.7 API 解壓 WOFF 字型，直接升至 0.8 會破壞相容性。移除覆寫前，需確認上游修補並通過相容性測試、`npm audit` 與完整驗證。GitHub 已在 2026-10-23 撤回下方的 braces 公告，`vendor/dynamic-import-glob` 是否還要保留，之後再評估。
 
 參考：[braces 漏洞公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)、[tinyglobby 遷移指引](https://superchupu.dev/tinyglobby/migration)、[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。

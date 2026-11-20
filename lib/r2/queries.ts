@@ -14,7 +14,7 @@ import { isTrashPath } from '../trash-policy';
 import { normalizePath } from '../path';
 import { R2ActionError } from './core';
 
-// R2 容量統計記憶體快取（注意：edge 環境每個 isolate 各一份，僅為盡力而為的快取）
+// R2 容量統計記憶體快取（容量查詢經 ALBUM_MUTATIONS 處理，快取存在該 Durable Object 的記憶體，重新啟動後歸零，僅為盡力而為的快取）
 let cachedUsage: { totalBytes: number; timestamp: number } | null = null;
 let usageRequest: Promise<BucketUsage> | null = null;
 let usageVersion = 0;
