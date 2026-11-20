@@ -49,7 +49,6 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "@vitejs/plugin-rsc": "^0.5.39",
-    "fast-glob": "file:./vendor/dynamic-import-glob",
     "jsdom": "^31.0.1",
     "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
@@ -62,7 +61,6 @@
     "postcss": "$postcss",
     "satori": {
       "fflate": "0.7.5"
-    },
-    "fast-glob": "$fast-glob"
+    }
   }
 }

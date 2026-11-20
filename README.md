@@ -96,6 +96,6 @@ GitHub Verify 在推送 `main`、以 `main` 為目標的 Pull Request 與手動�
 
 ## 依賴維護
 
-`package.json` 保留安全覆寫：`postcss` 統一版本，`vendor/dynamic-import-glob` 以 tinyglobby 提供既有 glob 介面，`satori/fflate` 固定為已修補的 `fflate@0.7.5`。Satori 仍用 fflate 0.7 API 解壓 WOFF 字型，直接升到 0.8 會壞。移除覆寫前，需確認上游修補並通過相容性測試、`npm audit` 與完整驗證。GitHub 已在 2026-10-23 撤回下方的 braces 公告，`vendor/dynamic-import-glob` 是否還要保留，之後再評估。
+`package.json` 保留兩項覆寫：`postcss` 統一版本，`satori/fflate` 固定為已修補的 `fflate@0.7.5`。Satori 仍用 fflate 0.7 API 解壓 WOFF 字型，直接升到 0.8 會壞。移除覆寫前，需確認上游修補並通過 `npm audit` 與完整驗證。
 
-參考：[braces 漏洞公告](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)、[tinyglobby 遷移指引](https://superchupu.dev/tinyglobby/migration)、[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。
+參考：[fflate 版本變更](https://github.com/101arrowz/fflate/blob/master/CHANGELOG.md)。

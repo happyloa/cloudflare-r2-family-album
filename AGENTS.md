@@ -20,7 +20,7 @@
 - `.family-album-trash/` 是保留路徑；一般 API 不得操作。媒體移入時記錄到期時間，改動保留天數不追溯既有項目；`worker.ts` 每小時只清理有效且到期的垃圾桶媒體。
 - 不得提交管理密碼、`.env.local` 或 `.dev.vars`。10 GB 容量條只是前端提醒，不能宣稱為伺服器配額或零費用保證。
 - 功能／依賴異動執行 `npm run verify`；框架或互動異動另跑 `npm run test:e2e` 與 `npm run test:e2e:worker`。文件核對指令、路徑、連結與實作。
-- 保留 `vendor/dynamic-import-glob` 與安全覆寫，移除前確認上游修補並通過相容性測試、`npm audit` 與建置。
+- 保留 `package.json` 的 `postcss` 與 `satori/fflate` 覆寫，移除前確認上游修補並通過 `npm audit` 與建置。
 
 ## Cloudflare 與文件
 
