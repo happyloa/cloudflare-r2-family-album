@@ -8,10 +8,11 @@ type UploadEnvironment = Record<string, string | undefined>;
 
 const processEnv = typeof process === 'undefined' ? undefined : process.env;
 
+// 上限以整數 MB 計算；小於 1 的值（例如 0.5）取整後會變成 0，改用預設值。
 function readLimit(value: string | undefined, fallback: number) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(Math.floor(parsed), WORKER_MAX_UPLOAD_SIZE_MB);
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, WORKER_MAX_UPLOAD_SIZE_MB);
 }
 
 /**

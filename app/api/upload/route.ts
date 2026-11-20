@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/ensure-admin";
-import { uploadFilesToR2 } from "@/lib/r2";
+import { R2ActionError, uploadFilesToR2 } from "@/lib/r2";
 import { createLimitedRequest } from "@/lib/upload/body-limit";
 import {
   type ValidatedUploadFile,
@@ -149,6 +149,8 @@ export async function POST(request: Request) {
       allFailed ? 502 : partiallySucceeded ? 207 : 201,
     );
   } catch (error) {
+    // 以 R2ActionError 拋出的輸入錯誤（例如垃圾桶保留路徑）回原本的狀態與訊息，不當成伺服器故障
+    if (error instanceof R2ActionError) return json({ error: error.message }, error.status);
     console.error("Upload failed", error);
     return json({ error: "上傳失敗，請稍後再試。" }, 500);
   }

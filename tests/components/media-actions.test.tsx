@@ -25,8 +25,11 @@ it('moves a large selection in bounded requests while keeping same-parent items 
 it('stops moving after a failed chunk and reports only confirmed earlier progress', async () => {
   const { props, result } = setup();
   props.authorizedFetch.mockResolvedValueOnce(new Response('{}')).mockResolvedValueOnce(new Response(JSON.stringify({ error: 'destination conflict' }), { status: 409 }));
-  expect(await result.current.handleMove(items, 'destination')).toBe(false);
+  const onCompleted = vi.fn();
+  expect(await result.current.handleMove(items, 'destination', onCompleted)).toBe(false);
   expect(props.authorizedFetch).toHaveBeenCalledTimes(2);
+  // 只回報確定已移走的第一批，呼叫端據此從待移動清單拿掉
+  expect(onCompleted).toHaveBeenCalledExactlyOnceWith(items.slice(0, 10));
   expect(props.pushMessage).toHaveBeenCalledWith('先前已移動 10 個項目。destination conflict', 'error');
   expect(props.loadMedia).toHaveBeenCalledWith('trip', { silent: true });
 });

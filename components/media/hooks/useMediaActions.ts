@@ -174,7 +174,12 @@ export function useMediaActions({
   };
 
   // 單筆、批次與拖曳共用同一個移動流程。
-  const handleMove = async (items: BatchItem[], targetPrefix: string): Promise<boolean> => {
+  // onCompleted 會在每一批成功後收到已移走的項目，讓呼叫端在部分失敗時更新待移動清單。
+  const handleMove = async (
+    items: BatchItem[],
+    targetPrefix: string,
+    onCompleted?: (moved: BatchItem[]) => void,
+  ): Promise<boolean> => {
     if (items.length === 0) return false;
     if (items.length > MAX_BATCH_ITEMS) {
       pushMessage(`每批最多移動 ${MAX_BATCH_ITEMS} 個項目，請分批操作。`, 'error');
@@ -209,6 +214,7 @@ export function useMediaActions({
           return false;
         }
         completedCount += chunk.length;
+        onCompleted?.(chunk);
       }
       pushMessage(
         skippedCount > 0

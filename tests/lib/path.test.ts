@@ -11,6 +11,7 @@ import {
 describe('path helpers', () => {
   it('removes characters that cannot be used in a single name', () => {
     expect(sanitizeName('  夏日:旅行/照片?  ')).toBe('夏日旅行照片');
+    expect(sanitizeName('夏日\t旅行\u0000')).toBe('夏日旅行');
   });
 
   it('sanitizes every path segment without keeping empty segments', () => {

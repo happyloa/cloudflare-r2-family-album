@@ -8,7 +8,7 @@ import type { UploadLimits } from '@/lib/upload/constants';
  * 同時供「上傳表單」與「拖曳到頁面上傳」使用，避免重複實作壓縮與 XHR 流程。
  */
 
-// 針對圖片使用 canvas 降解析度後輸出 WebP，降低檔案大小
+// 針對 JPEG 使用 canvas 降解析度後輸出 WebP，瀏覽器不支援 WebP 編碼時改用 JPEG
 async function compressImage(
   file: File,
 ): Promise<{ file: File; warning?: string }> {
@@ -33,14 +33,16 @@ async function compressImage(
     canvas.height = targetHeight;
     context.drawImage(image, 0, 0, targetWidth, targetHeight);
 
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob((result) => resolve(result), 'image/webp', 0.82),
-    );
+    const encode = (type: string, quality: number) =>
+      new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+    // Safari／iOS 不支援 canvas 輸出 WebP，會改回傳 PNG；不能把 PNG 標成 WebP，否則伺服器會整批拒收。
+    let blob = await encode('image/webp', 0.82);
+    if (blob?.type !== 'image/webp') blob = await encode('image/jpeg', 0.85);
 
-    if (!blob || blob.size >= file.size) return { file };
+    if (!blob || (blob.type !== 'image/webp' && blob.type !== 'image/jpeg') || blob.size >= file.size) return { file };
 
-    const compressedName = file.name.replace(/\.[^.]+$/, '.webp');
-    return { file: new File([blob], compressedName, { type: 'image/webp' }) };
+    const compressedName = blob.type === 'image/webp' ? file.name.replace(/\.[^.]+$/, '.webp') : file.name;
+    return { file: new File([blob], compressedName, { type: blob.type }) };
   } catch {
     return { file, warning: '圖片壓縮失敗，已改用原始檔案。' };
   } finally {
@@ -55,6 +57,13 @@ async function compressMedia(
   // 只壓縮 JPEG，保留 GIF、WebP、APNG、AVIF 等格式可能包含的動畫。
   if (file.type === 'image/jpeg') return compressImage(file);
   return { file };
+}
+
+/** 上傳前先在瀏覽器壓縮；伺服器檢查的是實際收到的大小，呼叫端要用回傳的檔案做大小檢查。 */
+export async function prepareUploadFiles(files: File[]): Promise<File[]> {
+  const prepared: File[] = [];
+  for (const file of files) prepared.push((await compressMedia(file)).file);
+  return prepared;
 }
 
 type UploadOptions = {
@@ -72,6 +81,8 @@ export type UploadResult = {
   media: MediaFile[];
   failures: UploadFailure[];
   hasMediaResult: boolean;
+  /** 伺服器驗證未通過、整批拒收時列出的檔案與原因。 */
+  details: UploadFailure[];
   error?: string;
 };
 
@@ -132,7 +143,8 @@ function parseUploadResult(request: XMLHttpRequest): UploadResult {
     status: request.status,
     media: [],
     failures: [],
-    hasMediaResult: false
+    hasMediaResult: false,
+    details: []
   };
 
   if (!request.responseText) return fallback;
@@ -144,12 +156,22 @@ function parseUploadResult(request: XMLHttpRequest): UploadResult {
     const body = payload as Record<string, unknown>;
     const media = body.media;
     const failures = body.failures;
+    // 驗證失敗時伺服器以 { name, reason } 列出檔案
+    const details = Array.isArray(body.details)
+      ? body.details.flatMap((detail: unknown) => {
+          const item = detail as Record<string, unknown> | null;
+          return item && typeof item.name === 'string' && typeof item.reason === 'string'
+            ? [{ name: item.name, error: item.reason }]
+            : [];
+        })
+      : [];
     const hasMediaResult = Array.isArray(media) && media.every(isMediaFile);
     return {
       ...fallback,
       media: hasMediaResult ? media : [],
       failures: Array.isArray(failures) ? failures.filter(isUploadFailure) : [],
       hasMediaResult,
+      details,
       error: typeof body.error === 'string' ? body.error : undefined
     };
   } catch {
@@ -158,7 +180,7 @@ function parseUploadResult(request: XMLHttpRequest): UploadResult {
 }
 
 /**
- * 壓縮並上傳一批檔案到 /api/upload
+ * 上傳一批檔案到 /api/upload；檔案應先經過 prepareUploadFiles 壓縮。
  * onProgress 會回報 0~100；無法計算進度時回報 null。
  */
 export async function uploadFiles({
@@ -170,14 +192,8 @@ export async function uploadFiles({
 }: UploadOptions): Promise<UploadResult> {
   const safePath = path.trim().replace(/^\/+|\/+$/g, '');
 
-  const compressed: File[] = [];
-  for (const file of files) {
-    const result = await compressMedia(file);
-    compressed.push(result.file);
-  }
-
   const formData = new FormData();
-  compressed.forEach((mediaFile) => formData.append('files', mediaFile));
+  files.forEach((mediaFile) => formData.append('files', mediaFile));
   formData.append('path', safePath);
 
   return new Promise<UploadResult>((resolve, reject) => {

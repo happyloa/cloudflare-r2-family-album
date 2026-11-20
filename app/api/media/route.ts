@@ -126,18 +126,19 @@ export async function GET(request: NextRequest) {
 
     if (cursor && (cursor.length > 2048 || /[\u0000-\u001f]/.test(cursor))) {
       return NextResponse.json(
-        { error: "Invalid media cursor", code: "INVALID_CURSOR" },
+        { error: "無效的媒體清單游標", code: "INVALID_CURSOR" },
         { status: 400 },
       );
     }
 
-    const limit = limitParam === null ? undefined : Number(limitParam);
+    // 沒帶 limit 時也套用上限，避免 R2 預設一次列出 1000 筆。
+    const limit = limitParam === null ? 200 : Number(limitParam);
     if (
       limitParam !== null &&
       (!/^\d+$/.test(limitParam) || !Number.isInteger(limit ?? Number.NaN) || (limit ?? 0) < 1 || (limit ?? 201) > 200)
     ) {
       return NextResponse.json(
-        { error: "The page size must be between 1 and 200", code: "INVALID_LIMIT" },
+        { error: "每頁數量必須是 1 到 200", code: "INVALID_LIMIT" },
         { status: 400 },
       );
     }

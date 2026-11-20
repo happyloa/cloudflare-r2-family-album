@@ -14,10 +14,13 @@ import {
   encodeKeyForUrl,
   getEnv,
   inferType,
+  listDirectEntries,
   signedFetch,
   objectExists,
+  prefixHasObjects,
   R2ActionError,
 } from "./core";
+import { UPLOAD_ID_PREFIX } from "../media-name";
 import { clearUsageCache } from "./queries";
 import { getTrashRetentionDays, isTrashPath } from '../trash-policy';
 import { trashFiles } from './trash';
@@ -118,9 +121,12 @@ function swapKeyPrefix(key: string, sourcePrefix: string, targetPrefix: string) 
   return targetPrefix + key.slice(sourcePrefix.length);
 }
 
-// 分批複製，任何一批只要有一個失敗，就把這批（含同批次裡其他已成功）以及
-// 前面批次已成功複製的目的地物件全部刪除再往上拋出錯誤，避免半途而廢留下
-// 孤兒/重複檔案，也避免下次重試被「目的地已存在」的衝突檢查永久卡住。
+// 分批複製，任何一批只要有一個失敗，就嘗試刪除這批（含同批次裡其他已成功）以及
+// 前面批次已成功複製的目的地物件，再往上拋出原本的錯誤；來源一律保留。
+// 回滾只是盡力而為：刪除本身也是一次外部請求，失敗會被忽略。若失敗原因是用完
+// Workers 每次請求的外部請求上限，回滾必定也失敗，目的地會留下部分副本：之後改名
+// 或移動到同一位置會被「目的地已存在」的檢查回 409，解散則會把殘留副本當成既有
+// 檔名另外編號，都需要手動清理。
 // 用 allSettled 而非 all，確保回滾前一定等到同批次所有複製都真正結束，
 // 不會漏掉跟失敗項目同時仍在進行、稍後才完成的複製。
 async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: string }[]) {
@@ -151,19 +157,18 @@ async function copyObjectsInBatches(tasks: { sourceKey: string; targetKey: strin
 }
 
 async function assertFolderDestinationAvailable(folderPath: string) {
-  const [exactObjectExists, nestedKeys] = await Promise.all([
+  const [exactObjectExists, hasNestedObjects] = await Promise.all([
     objectExists(folderPath),
-    collectKeys(folderPath, { includePrefixObject: true }),
+    prefixHasObjects(folderPath),
   ]);
 
-  if (exactObjectExists || nestedKeys.length > 0) {
+  if (exactObjectExists || hasNestedObjects) {
     throw new R2ActionError("目的地已有同名資料夾或檔案，請選擇其他名稱或位置。", 409);
   }
 }
 
 async function assertFileDestinationDoesNotConflictWithFolder(key: string) {
-  const nestedKeys = await collectKeys(key, { includePrefixObject: true });
-  if (nestedKeys.length > 0) {
+  if (await prefixHasObjects(key)) {
     throw new R2ActionError("目的地已有同名資料夾，請選擇其他名稱或位置。", 409);
   }
 }
@@ -189,23 +194,48 @@ async function listExistingFileNames(
 
   return existingNames;
 }
-// 依資料夾列出既有檔名 (用於大量移動時檢查衝突)
-async function listExistingEntriesByFolder(prefix: string) {
+// 解散時只列出實際會寫入的資料夾：父層的直接子項，加上父層裡已存在、會收到內容的子資料夾。
+// 不遞迴列出父層，根目錄的資料夾才不會為了檢查同名而掃過整個 bucket（含垃圾桶）。
+// 子資料夾前綴只代表底下有物件，可能只是待解散的來源本身；標記是否已存在，
+// 以該資料夾自己的列表裡有沒有標記物件為準。
+async function listDissolveDestinations(parent: string, targetKeys: string[]) {
+  const parentKey = buildFolderKey(parent);
   const existingNamesByFolder = new Map<string, Set<string>>();
-  const keys = await collectKeys(prefix, { includePrefixObject: true });
+  const existingKeys = new Set<string>();
+  const addKeys = (keys: string[]) => {
+    for (const key of keys) {
+      if (isTrashPath(key)) continue;
+      existingKeys.add(key);
+      if (key.endsWith("/")) continue;
+      const segments = key.split("/");
+      const name = segments.pop();
+      if (!name) continue;
+      const folderPath = segments.join("/");
+      const names = existingNamesByFolder.get(folderPath) ?? new Set<string>();
+      names.add(name);
+      existingNamesByFolder.set(folderPath, names);
+    }
+  };
 
-  for (const key of keys) {
-    if (key.endsWith("/")) continue;
-    const segments = key.split("/");
-    const name = segments.pop();
-    if (!name) continue;
-    const folderPath = segments.join("/");
-    const names = existingNamesByFolder.get(folderPath) ?? new Set<string>();
-    names.add(name);
-    existingNamesByFolder.set(folderPath, names);
+  // 只剩來源自己的標記（空資料夾在根目錄）時不會寫入任何東西，不必列表。
+  if (!targetKeys.some(Boolean)) return { existingNamesByFolder, existingKeys };
+
+  const parentEntries = await listDirectEntries(parent);
+  addKeys(parentEntries.keys);
+  const existingChildren = new Set(parentEntries.folders.filter(folder => !isTrashPath(folder)));
+
+  const targetFolders = new Set<string>();
+  for (const targetKey of targetKeys) {
+    const folder = targetKey.endsWith("/") ? targetKey.slice(0, -1) : targetKey.split("/").slice(0, -1).join("/");
+    if (!folder || folder === parent) continue;
+    // 父層沒有這個子資料夾時，底下不會有既有檔名或標記，不必再列。
+    const child = `${parentKey}${folder.slice(parentKey.length).split("/")[0]}`;
+    if (existingChildren.has(child)) targetFolders.add(folder);
   }
+  const listings = await Promise.all([...targetFolders].map(folder => listDirectEntries(folder)));
+  for (const { keys } of listings) addKeys(keys);
 
-  return { existingNamesByFolder, existingKeys: new Set(keys) };
+  return { existingNamesByFolder, existingKeys };
 }
 
 // ── 上傳 / 建立 ──
@@ -363,7 +393,9 @@ export async function renameFile(key: string, newName: string) {
   const parentPrefix = normalizeStoredPrefix(parent, "parent folder");
   const existingNames = await listExistingFileNames(parentPrefix, { excludeKey: normalizedKey });
 
-  const finalName = buildUniqueFileName(baseName, extension, existingNames);
+  // 保留上傳識別碼：key 的排序位置與上傳時間不變，大資料夾裡改名後的檔案不會跑到還沒載入的分頁。
+  const uploadId = currentName.match(UPLOAD_ID_PREFIX)?.[0] ?? "";
+  const finalName = buildUniqueFileName(uploadId + baseName, extension, existingNames);
 
   const newKey = parent ? `${parentPrefix}/${finalName}` : finalName;
 
@@ -471,35 +503,10 @@ export async function moveFolder(key: string, targetPrefix: string) {
   })) {
     throw new R2ActionError("移動後的子資料夾會超過兩層，請選擇較淺的目標位置。");
   }
-  const { existingNamesByFolder } =
-    await listExistingEntriesByFolder(targetFolderPath);
 
-  const copyTasks: { sourceKey: string; targetKey: string }[] = [];
-
-  for (const sourceKey of keys) {
-    const targetKey = swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey);
-    if (sourceKey.endsWith("/")) {
-      copyTasks.push({ sourceKey, targetKey });
-      continue;
-    }
-
-    const segments = targetKey.split("/");
-    const fileName = segments.pop();
-    if (!fileName) continue;
-    const targetFolder = segments.join("/");
-    const existingNames =
-      existingNamesByFolder.get(targetFolder) ?? new Set<string>();
-    const resolvedName = buildUniqueFileNameForConflict(fileName, existingNames);
-    existingNames.add(resolvedName);
-    existingNamesByFolder.set(targetFolder, existingNames);
-    const resolvedTargetKey = targetFolder
-      ? `${targetFolder}/${resolvedName}`
-      : resolvedName;
-
-    copyTasks.push({ sourceKey, targetKey: resolvedTargetKey });
-  }
-
-  await copyObjectsInBatches(copyTasks);
+  // 目的地已確認是空的，換前綴又是一對一，不會撞名，不必再列一次目的地。
+  // 外部程式在這段空檔寫入時，由複製的目的地條件回 409 並回滾。
+  await copyObjectsInBatches(keys.map((sourceKey, index) => ({ sourceKey, targetKey: destinationKeys[index] })));
 
   await deleteObjects(keys);
 
@@ -524,14 +531,16 @@ export async function dissolveFolder(folderKey: string) {
   const keys = await collectKeys(normalizedKey, { includePrefixObject: true });
   if (keys.length === 0) return;
 
-  // 以父層既有檔名為基準做衝突改名
-  const { existingNamesByFolder, existingKeys } = await listExistingEntriesByFolder(parent);
+  // 把 "trip/..." 換成父層前綴："trip/sub/x.jpg" → "sub/x.jpg"（root）或 "2024/sub/x.jpg"
+  const mappedKeys = keys.map(sourceKey => swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey));
+
+  // 以目的地既有檔名為基準做衝突改名
+  const { existingNamesByFolder, existingKeys } = await listDissolveDestinations(parent, mappedKeys);
 
   const copyTasks: { sourceKey: string; targetKey: string }[] = [];
   const retainedMarkerKeys = new Set<string>();
-  for (const sourceKey of keys) {
-    // 把 "trip/..." 換成父層前綴："trip/sub/x.jpg" → "sub/x.jpg"（root）或 "2024/sub/x.jpg"
-    const mappedKey = swapKeyPrefix(sourceKey, sourcePrefix, targetPrefixKey);
+  for (const [index, sourceKey] of keys.entries()) {
+    const mappedKey = mappedKeys[index];
 
     if (sourceKey.endsWith("/")) {
       if (!mappedKey) continue;
@@ -565,8 +574,9 @@ export async function dissolveFolder(folderKey: string) {
 export async function batchDelete(items: { key: string; isFolder: boolean }[]) {
   const fileKeys = new Set<string>();
   for (const item of items) normalizeStoredKey(item.key, item.isFolder ? 'folder key' : 'file key');
+  // 解散資料夾也要列表、複製與刪除，和媒體合計每次最多 10 項，與前端分批一致。
+  if (items.length > MAX_TRASH_ITEMS_PER_REQUEST) throw new R2ActionError(`每次最多刪除 ${MAX_TRASH_ITEMS_PER_REQUEST} 個項目，請分批操作`);
   const requestedFiles = new Set(items.filter(item => !item.isFolder).map(item => item.key));
-  if (requestedFiles.size > MAX_TRASH_ITEMS_PER_REQUEST) throw new R2ActionError(`媒體每次最多移入 ${MAX_TRASH_ITEMS_PER_REQUEST} 項，請分批操作`);
   if (requestedFiles.size) getTrashRetentionDays();
 
   for (const item of items) {

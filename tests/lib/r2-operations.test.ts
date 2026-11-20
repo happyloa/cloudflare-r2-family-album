@@ -7,7 +7,7 @@ const { storage, copyFailures, copyConflicts, copyArrivals, requests, listRespon
   copyFailures: new Set<string>(),
   copyConflicts: new Set<string>(),
   copyArrivals: new Map<string, number>(),
-  requests: [] as { method: string; key: string; headers: Headers }[],
+  requests: [] as { method: string; key: string; headers: Headers; query: URLSearchParams }[],
   listResponses: [] as Array<() => Response | Promise<Response>>,
 }));
 
@@ -17,12 +17,12 @@ vi.mock('aws4fetch', () => ({
       const url = new URL(input);
       const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
       const method = init.method ?? 'GET';
-      requests.push({ method, key, headers: new Headers(init.headers) });
+      requests.push({ method, key, headers: new Headers(init.headers), query: url.searchParams });
       if (method === 'GET' && listResponses.length) return listResponses.shift()!();
       if (method === 'HEAD') return new Response(null, { status: storage.has(key) ? 200 : 404 });
       if (method === 'DELETE') { storage.delete(key); return new Response(null, { status: 204 }); }
       if (method === 'POST' && url.searchParams.has('delete')) {
-        const body = new XMLParser().parse(String(init.body));
+        const body = new XMLParser({ parseTagValue: false, trimValues: false }).parse(String(init.body));
         const objects = [body.Delete.Object].flat();
         for (const object of objects) storage.delete(object.Key);
         return new Response('<DeleteResult/>');
@@ -104,8 +104,8 @@ describe('R2 operations with isolated S3 storage', () => {
 
   it('refuses a folder key whose listing prefix differs instead of writing truncated names', async () => {
     storage.set('a/photo.jpg', 1); storage.set('t/', 0);
-    await expect(renameFolder('a/ / /', 'b')).rejects.toThrow();
-    await expect(moveFolder('a/ / /', 't')).rejects.toThrow();
+    await expect(renameFolder('a/ / /', 'b')).rejects.toThrow('Listed key is outside the source folder');
+    await expect(moveFolder('a/ / /', 't')).rejects.toThrow('Invalid folder');
     expect(Object.fromEntries(storage)).toEqual({ 'a/photo.jpg': 1, 't/': 0 });
   });
 
@@ -116,6 +116,67 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(Object.fromEntries(storage)).toEqual({ 'photo.jpg': 1, 'photo (2).jpg': 2, 'child/video.mp4': 3 });
     await batchDelete([{ key: 'photo (2).jpg', isFolder: false }]);
     expect(storage.has('photo (2).jpg')).toBe(false);
+  });
+
+  it('dissolves a root folder by listing only its destinations instead of the whole bucket', async () => {
+    for (let index = 0; index < 1100; index++) storage.set(`other/${index}.jpg`, 1);
+    storage.set(`${TRASH_PREFIX}old/photo.jpg`, 1);
+    storage.set('photo.jpg', 2); storage.set('child/', 0); storage.set('child/a.jpg', 3);
+    storage.set('trip/', 0); storage.set('trip/photo.jpg', 4); storage.set('trip/child/a.jpg', 5); storage.set('trip/new/b.jpg', 6);
+    await batchDelete([{ key: 'trip', isFolder: true }]);
+    expect(storage.get('photo (2).jpg')).toBe(4);
+    expect(storage.get('child/a (2).jpg')).toBe(5);
+    expect(storage.get('new/b.jpg')).toBe(6);
+    expect(storage.get(`${TRASH_PREFIX}old/photo.jpg`)).toBe(1);
+    expect([...storage.keys()].some(key => key.startsWith('trip/'))).toBe(false);
+    const lists = requests.filter(request => request.method === 'GET').map(request => [request.query.get('prefix'), request.query.get('delimiter')]);
+    expect(lists).toEqual([['trip/', null], ['', '/'], ['child/', '/']]);
+  });
+
+  it('restores an empty child marker that maps onto an implicit dissolved folder', async () => {
+    storage.set('trip/trip/', 0); storage.set('trip/a.jpg', 1);
+    await batchDelete([{ key: 'trip', isFolder: true }]);
+    expect(Object.fromEntries(storage)).toEqual({ 'trip/': 0, 'a.jpg': 1 });
+  });
+
+  it('limits each delete request to ten items including folders before touching storage', async () => {
+    const folders = Array.from({ length: 11 }, (_, index) => ({ key: `folder-${index}`, isFolder: true }));
+    folders.forEach(folder => storage.set(`${folder.key}/`, 0));
+    await expect(batchDelete(folders)).rejects.toMatchObject({ status: 400, message: '每次最多刪除 10 個項目，請分批操作' });
+    expect(requests).toHaveLength(0);
+    expect(storage.size).toBe(11);
+    await batchDelete(folders.slice(0, 10));
+    expect([...storage.keys()]).toEqual(['folder-10/']);
+    expect(requests.filter(request => request.method === 'GET')).toHaveLength(10);
+  });
+
+  it('checks a folder destination with one single-key listing and does not list it again', async () => {
+    storage.set('year/', 0); storage.set('trip/a.jpg', 1); storage.set('trip/b.jpg', 2);
+    await moveFolder('trip', 'year');
+    expect(Object.fromEntries(storage)).toEqual({ 'year/': 0, 'year/trip/a.jpg': 1, 'year/trip/b.jpg': 2 });
+    const destinationLists = requests.filter(request => request.method === 'GET' && request.query.get('prefix') === 'year/trip/');
+    expect(destinationLists.map(request => request.query.get('max-keys'))).toEqual(['1']);
+
+    requests.length = 0;
+    for (let index = 0; index < 1500; index++) storage.set(`year/other/${index}.jpg`, 1);
+    storage.set('other/a.jpg', 1);
+    await expect(moveFolder('other', 'year')).rejects.toMatchObject({ status: 409 });
+    expect(requests.filter(request => request.method === 'GET')).toHaveLength(1);
+    expect(requests.some(request => request.method === 'PUT')).toBe(false);
+  });
+
+  it('keeps numeric-looking and space-padded keys and cursors exactly as stored', async () => {
+    for (const key of ['007', '0x1A', '1e3', '2024.10', ' spaced.jpg ']) storage.set(key, 1);
+    const listing = await listMedia('');
+    expect(listing.files.map(file => file.key)).toEqual([' spaced.jpg ', '007', '0x1A', '1e3', '2024.10']);
+    expect(listing.files[1].url).toBe('https://media.test/007');
+    const page = await listMedia('', { limit: 2 });
+    expect(page.nextCursor).toBe('007');
+    expect((await listMedia('', { cursor: page.nextCursor!, limit: 1 })).files.map(file => file.key)).toEqual(['0x1A']);
+    await renameFile('007', '008');
+    await batchDelete([{ key: '1e3', isFolder: false }]);
+    expect([...storage.keys()].filter(key => !key.startsWith(TRASH_PREFIX)).sort()).toEqual([' spaced.jpg ', '008', '0x1A', '2024.10']);
+    expect((await listTrash()).files.map(file => file.originalKey)).toEqual(['1e3']);
   });
 
   it('checks direct filenames without scanning unrelated nested media', async () => {
@@ -170,6 +231,18 @@ describe('R2 operations with isolated S3 storage', () => {
     expect(requests).toHaveLength(calls);
   });
 
+  it('keeps the upload id when renaming so the media keeps its upload time and list position', async () => {
+    const id = '1700000000000-0f8fad5b-d9cb-469f-a165-70867728950e-';
+    storage.set(`trip/${id}IMG_0001.jpg`, 1);
+    await renameFile(`trip/${id}IMG_0001.jpg`, '海邊');
+    expect([...storage.keys()]).toEqual([`trip/${id}海邊.jpg`]);
+  });
+
+  it('reports a vanished source with a message that does not point to the trash', async () => {
+    await expect(renameFile('gone.jpg', 'renamed')).rejects.toMatchObject({ status: 404, message: '項目已不存在，請重新整理後再試' });
+    expect(requests.some(request => request.method === 'DELETE')).toBe(false);
+  });
+
   it('keeps the source when a copy returns an error inside HTTP 200', async () => {
     storage.set('original.jpg', 123); copyFailures.add('original.jpg');
     await expect(renameFile('original.jpg', 'renamed')).rejects.toThrow();
@@ -183,7 +256,7 @@ describe('R2 operations with isolated S3 storage', () => {
   ])('preserves both files when a concurrent $action claims the destination', async ({ sourceKey, targetKey, run }) => {
     storage.set(sourceKey, 123);
     copyArrivals.set(targetKey, 999);
-    await expect(run()).rejects.toMatchObject({ status: 409 });
+    await expect(run()).rejects.toMatchObject({ status: 409, message: '目的地已有同名項目，請重新整理後再試' });
     expect(Object.fromEntries(storage)).toEqual({ [sourceKey]: 123, [targetKey]: 999 });
     expect(requests.find(request => request.method === 'PUT')?.headers.get('cf-copy-destination-if-none-match')).toBe('*');
     expect(requests.some(request => request.method === 'DELETE' || request.method === 'POST')).toBe(false);
@@ -198,7 +271,7 @@ describe('R2 operations with isolated S3 storage', () => {
 
   it('rolls back completed folder copies when another copy fails', async () => {
     storage.set('trip/a.jpg', 1); storage.set('trip/b.jpg', 2); copyFailures.add('trip/b.jpg');
-    await expect(renameFolder('trip', 'renamed')).rejects.toThrow();
+    await expect(renameFolder('trip', 'renamed')).rejects.toThrow('R2 did not confirm the object copy');
     expect(Object.fromEntries(storage)).toEqual({ 'trip/a.jpg': 1, 'trip/b.jpg': 2 });
   });
 
@@ -218,7 +291,7 @@ describe('R2 operations with isolated S3 storage', () => {
     storage.set('trip/child/a.jpg', 1); storage.set('trip/child/b.jpg', 2);
     const originalStorage = Object.fromEntries(storage);
     copyFailures.add('trip/child/b.jpg');
-    await expect(batchDelete([{ key: 'trip', isFolder: true }])).rejects.toThrow();
+    await expect(batchDelete([{ key: 'trip', isFolder: true }])).rejects.toThrow('R2 did not confirm the object copy');
     expect(Object.fromEntries(storage)).toEqual(originalStorage);
     expect(requests.some(request => request.method === 'PUT' && request.key === 'child/')).toBe(false);
   });
@@ -279,14 +352,17 @@ describe('R2 operations with isolated S3 storage', () => {
 
   it('keeps media when moving to trash fails and rejects access through ordinary album mutations', async () => {
     storage.set('photo.jpg', 123); copyFailures.add('photo.jpg');
-    await expect(trashFiles(['photo.jpg'])).rejects.toThrow();
+    await expect(trashFiles(['photo.jpg'])).rejects.toThrow('R2 did not confirm the object copy');
     expect(storage.get('photo.jpg')).toBe(123);
     expect(requests.some(request => request.method === 'POST')).toBe(false);
-    await expect(createFolder('', TRASH_PREFIX.slice(0, -1))).rejects.toThrow();
-    await expect(batchMove([{ key: 'photo.jpg', isFolder: false }], TRASH_PREFIX)).rejects.toThrow();
+    // 清掉模擬的複製失敗，下面的拒絕才確定來自保留路徑檢查。
+    copyFailures.clear();
     const calls = requests.length;
-    await expect(trashFiles(['invalid\u0000.jpg'])).rejects.toThrow();
+    await expect(createFolder('', TRASH_PREFIX.slice(0, -1))).rejects.toMatchObject({ status: 400, message: '此名稱保留給垃圾桶使用' });
+    await expect(batchMove([{ key: 'photo.jpg', isFolder: false }], TRASH_PREFIX)).rejects.toMatchObject({ status: 400, message: '垃圾桶路徑不能用於一般相簿操作' });
+    await expect(trashFiles(['invalid\u0000.jpg'])).rejects.toMatchObject({ status: 400, message: '無效的媒體路徑，無法移入垃圾桶' });
     expect(requests).toHaveLength(calls);
+    expect(storage.get('photo.jpg')).toBe(123);
   });
 
   it('restores Unicode media to its original path and refuses to overwrite existing media', async () => {

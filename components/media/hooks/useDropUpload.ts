@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { fetchUploadLimits, uploadFiles } from '@/lib/upload/client';
+import { fetchUploadLimits, prepareUploadFiles, uploadFiles, type UploadResult } from '@/lib/upload/client';
 import {
   getSizeLimitByMime,
   isAllowedMediaMime,
@@ -17,6 +17,17 @@ type ConfirmFn = (opts: {
   cancelLabel?: string;
   danger?: boolean;
 }) => Promise<boolean>;
+
+// 整批被拒時列出前幾個未通過檢查的檔案與原因，使用者才知道要拿掉哪個檔案。
+function describeUploadFailure(response: UploadResult) {
+  if (response.status === 401) return '管理模式已逾時，請重新輸入密碼後再試一次。';
+  if (response.details.length > 0) {
+    const listed = response.details.slice(0, 2).map((detail) => `${detail.name}（${detail.error}）`).join('、');
+    const more = response.details.length > 2 ? ` 等 ${response.details.length} 個檔案` : '';
+    return `上傳失敗，請移除未通過檢查的檔案後再試：${listed}${more}`;
+  }
+  return response.error ? `上傳失敗：${response.error}` : '上傳失敗，請稍後再試。';
+}
 
 type UseDropUploadProps = {
   currentPrefix: string;
@@ -82,11 +93,24 @@ export function useDropUpload({
           return;
         }
 
-        const within = selected.filter((file) => {
+        const fitsSizeLimit = (file: File) => {
           const limit = getSizeLimitByMime(file.type, limits);
           return typeof limit === 'number' && file.size <= limit;
-        });
-        const oversized = selected.length - within.length;
+        };
+        // 壓縮只會讓檔案變小，原始大小已在上限內的檔案一定會送出；這些就超過數量上限時，不必先壓縮整批。
+        if (selected.filter(fitsSizeLimit).length > limits.maxFileCount) {
+          pushMessage(`檔案數量超過上限 ${limits.maxFileCount} 個，請分批上傳。`, 'error');
+          return;
+        }
+
+        // 伺服器檢查的是實際收到的檔案，所以先壓縮，再用壓縮後的大小檢查單檔、總量與容量。
+        setDropUploading(true);
+        setDropProgress(0);
+        const prepared = await prepareUploadFiles(selected);
+        setDropUploading(false);
+
+        const within = prepared.filter(fitsSizeLimit);
+        const oversized = prepared.length - within.length;
         if (within.length === 0) {
           pushMessage('檔案皆超過目前大小上限，請調整後再上傳。', 'error');
           return;
@@ -153,10 +177,7 @@ export function useDropUpload({
             return;
           }
 
-          pushMessage(
-            response.error ? `上傳失敗：${response.error}` : '上傳失敗，請稍後再試。',
-            'error'
-          );
+          pushMessage(describeUploadFailure(response), 'error');
           return;
         }
 

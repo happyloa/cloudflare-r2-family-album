@@ -149,10 +149,19 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  // 切換資料夾時清除選取（僅依路徑變動觸發）
+  // 切換資料夾（含瀏覽器返回）時清除選取並關閉預覽，預覽不會停在上一個資料夾的媒體
   useEffect(() => {
     selection.clear();
+    setPreview({ media: null, trigger: null });
   }, [currentPrefix]);
+
+  // 管理模式逾時或登出後，關閉需要管理權限的對話框並清除選取，避免送出沒有密碼的請求
+  useEffect(() => {
+    if (isAdmin) return;
+    setRenameTarget(null);
+    setMoveItems(null);
+    selection.clear();
+  }, [isAdmin]);
 
   const depth = Math.min(getDepth(currentPrefix), MAX_FOLDER_DEPTH);
 
@@ -205,7 +214,10 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       return;
     }
 
-    if (await handleMove(items, targetPrefix)) {
+    // 部分批次失敗時，已移走的項目要從對話框拿掉，重試才不會因來源不存在而失敗
+    const onCompleted = (moved: { key: string }[]) =>
+      setMoveItems((current) => current?.filter((item) => !moved.some((done) => done.key === item.key)) ?? null);
+    if (await handleMove(items, targetPrefix, onCompleted)) {
       selection.clear();
       setMoveItems(null);
     }

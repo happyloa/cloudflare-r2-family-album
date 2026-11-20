@@ -40,12 +40,21 @@ function getCount(key: string): number {
   return entry.count;
 }
 
+function pruneExpired(now: number) {
+  for (const [storedKey, entry] of store) if (now >= entry.expiresAt) store.delete(storedKey);
+  lastCleanupAt = now;
+}
+
+// 追蹤表已滿時新來源的失敗次數記不下來，必須在比對密碼前拒絕，否則等於不限次數猜測。
+function isTrackingFull(key: string): boolean {
+  if (store.has(key) || store.size < MAX_TRACKED_IPS) return false;
+  pruneExpired(Date.now());
+  return store.size >= MAX_TRACKED_IPS;
+}
+
 function increment(key: string): number {
   const now = Date.now();
-  if (now - lastCleanupAt > 30000 || store.size >= MAX_TRACKED_IPS) {
-    for (const [storedKey, entry] of store) if (now >= entry.expiresAt) store.delete(storedKey);
-    lastCleanupAt = now;
-  }
+  if (now - lastCleanupAt > 30000 || store.size >= MAX_TRACKED_IPS) pruneExpired(now);
   const entry = store.get(key);
   if (!entry || now > entry.expiresAt) {
     if (store.size >= MAX_TRACKED_IPS) return MAX_FAILURES;
@@ -95,7 +104,7 @@ export async function requireAdmin(
   const retryMinutes = Math.ceil(RATE_LIMIT_WINDOW_MS / 60000);
 
   // 速率限制檢查
-  if (getCount(key) >= MAX_FAILURES) {
+  if (getCount(key) >= MAX_FAILURES || isTrackingFull(key)) {
     return NextResponse.json(
       {
         error: `因密碼輸入不正確，請於 ${retryMinutes} 分鐘後再試。`,

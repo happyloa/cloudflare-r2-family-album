@@ -13,6 +13,15 @@ type Confirm = (options: { title?: string; message: string; confirmLabel?: strin
 type ListingResponse = { error?: string; files: TrashMedia[]; nextCursor: string | null; retentionDays: number };
 type ActionResponse = { error?: string; completedKeys: string[]; failures: { key: string; error: string }[] };
 
+// 只顯示伺服器以 JSON 回傳的錯誤文字；HTML 錯誤頁、格式不符與連線例外一律改用固定中文訊息。
+class TrashRequestError extends Error {}
+
+async function readTrashResponse<T extends { error?: string }>(response: Response, isValid: (data: T) => boolean, fallback: string) {
+  const data = await response.json().catch(() => null) as T | null;
+  if (response.ok && data && isValid(data)) return data;
+  throw new TrashRequestError(typeof data?.error === 'string' && data.error ? data.error : fallback);
+}
+
 export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged, confirm }: {
   open: boolean;
   revision: number;
@@ -45,16 +54,14 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
     setLoadError('');
     try {
       const response = await authorizedFetch(`/api/trash${nextCursor ? `?cursor=${encodeURIComponent(nextCursor)}` : ''}`, { signal: request.signal });
-      const data = await response.json() as ListingResponse;
-      if (!response.ok) throw new Error(data.error || '無法載入垃圾桶');
-      if (!Array.isArray(data.files)) throw new Error('垃圾桶回應格式錯誤');
+      const data = await readTrashResponse<ListingResponse>(response, value => Array.isArray(value.files), '無法載入垃圾桶');
       if (request.signal.aborted) return;
       setFiles(previous => [...new Map((nextCursor ? [...previous, ...data.files] : data.files).map((file: TrashMedia) => [file.key, file])).values()] as TrashMedia[]);
       setCursor(data.nextCursor ?? null);
       setRetentionDays(data.retentionDays);
       setNow(Date.now());
     } catch (error) {
-      if (!request.signal.aborted) setLoadError(error instanceof Error ? error.message : '無法載入垃圾桶');
+      if (!request.signal.aborted) setLoadError(error instanceof TrashRequestError ? error.message : '無法連線到伺服器');
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
@@ -86,14 +93,13 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
       const failures: ActionResponse['failures'] = [];
       for (let offset = 0; offset < keys.length; offset += MAX_TRASH_ITEMS_PER_REQUEST) {
         const response = await authorizedFetch('/api/trash', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, keys: keys.slice(offset, offset + MAX_TRASH_ITEMS_PER_REQUEST) }) });
-        const data = await response.json() as ActionResponse;
-        if (!response.ok || !Array.isArray(data.completedKeys) || !Array.isArray(data.failures)) throw new Error(data.error || '操作失敗，請重新整理後確認結果');
+        const data = await readTrashResponse<ActionResponse>(response, value => Array.isArray(value.completedKeys) && Array.isArray(value.failures), '操作失敗，請重新整理後確認結果');
         completedKeys.push(...data.completedKeys); failures.push(...data.failures);
       }
       const message = failures.length ? `${completedKeys.length} 個完成，${failures.length} 個未完成：${failures[0].error}` : `已${action === 'restore' ? '還原' : '永久刪除'} ${completedKeys.length} 個媒體`;
       setActionMessage(message);
     } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : '操作失敗，請稍後再試');
+      setActionMessage(error instanceof TrashRequestError ? error.message : '連線中斷，部分項目可能已完成，請重新整理後確認結果');
     } finally {
       // 連線中斷也可能已有項目完成，相簿、容量與垃圾桶都須重新核對。
       setWorking(false);

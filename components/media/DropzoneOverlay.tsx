@@ -33,7 +33,7 @@ export function DropzoneOverlay({
           <div className="space-y-1">
             <p className="text-xl font-bold text-white">放開即可上傳到這裡</p>
             <p className="text-sm text-surface-400">
-              將上傳到「{targetLabel}」，圖片會自動壓縮。
+              將上傳到「{targetLabel}」。JPEG 會自動縮小，其他格式保留原檔。
             </p>
           </div>
         )}

@@ -90,10 +90,14 @@ export function getEnv(): Record<EnvKeys, string> {
 }
 
 // 初始化 XML 解析器 (用於解析 R2 回傳的 XML)
+// 文字節點保持原字串：預設會把 007、1e3、0x1A 這類 Key 或 continuation token 轉成數字，
+// 也會去掉前後空白，得到的 key 就跟 R2 上的不同。Size 由 parseListResult 自行轉數字。
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
   textNodeName: "value",
+  parseTagValue: false,
+  trimValues: false,
 });
 
 let cachedClient: AwsClient | null = null;
@@ -329,12 +333,12 @@ export function parseListResult(
   return { folders, contents, isTruncated, nextContinuationToken };
 }
 
-// 收集指定 Prefix 下的所有 Key (用於刪除或移動資料夾)
-export async function collectKeys(
+async function listPrefixEntries(
   prefix: string,
-  options: { includePrefixObject?: boolean; recursive?: boolean } = {},
+  options: { includePrefixObject?: boolean; recursive?: boolean; includeFolders?: boolean },
 ) {
   const keys: string[] = [];
+  const folders: string[] = [];
   let continuationToken: string | undefined;
   const searchPrefix = buildFolderKey(normalizePath(prefix));
 
@@ -350,17 +354,41 @@ export async function collectKeys(
       );
     }
 
-    const { contents, nextContinuationToken } = parseListResult(
+    const { folders: pageFolders, contents, nextContinuationToken } = parseListResult(
       await response.text(),
       searchPrefix,
-      false,
+      options.includeFolders ?? false,
       options,
     );
     keys.push(...contents.map((item) => item.key));
+    folders.push(...pageFolders.map((folder) => folder.key));
     continuationToken = nextContinuationToken;
   } while (continuationToken);
 
-  return keys;
+  return { keys, folders };
+}
+
+// 收集指定 Prefix 下的所有 Key (用於刪除或移動資料夾)
+export async function collectKeys(
+  prefix: string,
+  options: { includePrefixObject?: boolean; recursive?: boolean } = {},
+) {
+  return (await listPrefixEntries(prefix, options)).keys;
+}
+
+// 只列出資料夾的直接子項：物件 key（含資料夾標記本身）與子資料夾路徑（不含結尾 /）。
+export async function listDirectEntries(prefix: string) {
+  return listPrefixEntries(prefix, { includePrefixObject: true, recursive: false, includeFolders: true });
+}
+
+// 只需知道前綴下有沒有物件時只讀一筆，不把整個子樹列完。
+export async function prefixHasObjects(prefix: string) {
+  const searchPrefix = buildFolderKey(normalizePath(prefix));
+  const response = await signedFetch(buildListUrl(searchPrefix, { maxKeys: 1 }).toString());
+  if (!response.ok) {
+    throw new Error(`Failed to list folder for processing: ${response.status} ${response.statusText}`);
+  }
+  return parseListResult(await response.text(), searchPrefix, false, { includePrefixObject: true }).contents.length > 0;
 }
 
 export async function objectExists(key: string) {
@@ -421,11 +449,12 @@ export async function copyObjectWithinBucket(sourceKey: string, targetKey: strin
     },
   });
 
+  // 改名、移動、解散、移入與還原垃圾桶都共用這裡，訊息不限定垃圾桶情境。
   if (options.requireAbsentDestination && responseIsConflict(copyResponse.status)) {
-    throw new R2ActionError('原位置已有同名項目，請先處理同名項目後重試', 409);
+    throw new R2ActionError('目的地已有同名項目，請重新整理後再試', 409);
   }
   if (options.requireAbsentDestination && copyResponse.status === 404) {
-    throw new R2ActionError('項目已不存在，請重新整理垃圾桶', 404);
+    throw new R2ActionError('項目已不存在，請重新整理後再試', 404);
   }
 
   if (!copyResponse.ok) {

@@ -173,7 +173,8 @@ export function MediaPreviewModal({
           {hasPrev ? <NavArrow direction="prev" onClick={goPrev} /> : null}
           {hasNext ? <NavArrow direction="next" onClick={goNext} /> : null}
 
-          <div className="relative aspect-[16/10] max-h-[calc(100dvh-12rem)] w-full max-w-5xl overflow-hidden rounded-2xl border border-surface-800 bg-black">
+          {/* 手機直向改用明確高度，直式照片才不會被 16:10 壓成郵票大小；sm 以上維持 16:10。 */}
+          <div className="relative h-[calc(100dvh-14rem)] min-h-[10rem] w-full max-w-5xl overflow-hidden rounded-2xl border border-surface-800 bg-black sm:aspect-[16/10] sm:h-auto sm:max-h-[calc(100dvh-12rem)] sm:min-h-0">
             {!isLoaded && !hasFailed && (
               <div className="absolute inset-0 flex items-center justify-center bg-surface-950/60">
                 <span

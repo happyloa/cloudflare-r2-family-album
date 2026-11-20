@@ -19,6 +19,8 @@ describe('media API boundaries', () => {
     expect(response.status).toBe(200);
     expect(mocks.requireAdmin).not.toHaveBeenCalled();
     expect(mocks.listMedia).toHaveBeenCalledWith('', { limit: 48, cursor: 'first' });
+    await GET(new NextRequest('https://album.test/api/media'));
+    expect(mocks.listMedia).toHaveBeenLastCalledWith('', { limit: 200, cursor: undefined });
   });
 
   it.each([POST, PATCH, DELETE])('requires authentication before every mutation', async handler => {

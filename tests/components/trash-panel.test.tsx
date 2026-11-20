@@ -43,6 +43,41 @@ it.each([
   await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
   await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(3));
   expect(chunks).toBe(failedChunk);
-  expect(screen.getByRole('status').textContent).toContain('simulated network failure');
+  // 連線例外的英文原文不給使用者看，改用說明可能已部分完成的中文訊息。
+  expect(screen.getByRole('status').textContent).toBe('連線中斷，部分項目可能已完成，請重新整理後確認結果');
+  expect(screen.getByRole('status').textContent).not.toContain('simulated network failure');
   expect((screen.getByRole('button', { name: '關閉垃圾桶' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+const trashed: TrashMedia = {
+  key: 'trash/0.jpg', originalKey: 'photo.jpg', url: '/test-media/0.jpg', type: 'image',
+  trashedAt: '2026-10-18T00:00:00Z', expiresAt: '2026-11-02T00:00:00Z',
+};
+const htmlErrorPage = () => new Response('<!DOCTYPE html><html><body>Worker threw exception</body></html>', { status: 502, headers: { 'Content-Type': 'text/html' } });
+
+it('shows a Chinese message instead of a JSON parse error when the listing is an HTML error page', async () => {
+  const authorizedFetch = vi.fn(async () => htmlErrorPage());
+  render(<TrashPanel open revision={0} authorizedFetch={authorizedFetch} onClose={vi.fn()} onChanged={vi.fn()} confirm={vi.fn()} />);
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toBe('無法載入垃圾桶，請重新整理後重試。');
+  expect(alert.textContent).not.toMatch(/JSON|Unexpected|DOCTYPE/);
+});
+
+it('keeps the server message for JSON errors and hides parse errors from HTML action responses', async () => {
+  const listing = () => Response.json({ files: [trashed], nextCursor: null, retentionDays: 15 });
+  const actions = [
+    () => Response.json({ error: '每次請提供 1 到 10 個有效的垃圾桶項目' }, { status: 400 }),
+    htmlErrorPage,
+  ];
+  const authorizedFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST' ? actions.shift()!() : listing());
+  const onChanged = vi.fn();
+  render(<TrashPanel open revision={0} authorizedFetch={authorizedFetch} onClose={vi.fn()} onChanged={onChanged} confirm={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: '選取垃圾桶媒體 photo.jpg' }));
+
+  fireEvent.click(screen.getByRole('button', { name: '還原' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('每次請提供 1 到 10 個有效的垃圾桶項目'));
+
+  fireEvent.click(screen.getByRole('button', { name: '還原' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('操作失敗，請重新整理後確認結果'));
+  expect(onChanged).toHaveBeenCalledTimes(2);
 });
