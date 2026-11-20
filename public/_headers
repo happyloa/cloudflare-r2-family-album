@@ -5,3 +5,7 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   X-Content-Type-Options: nosniff
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
+
+# vinext 只在沒有 _headers 時才自動產生這條規則；這裡的建置資產檔名含雜湊，可長期快取。
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -33,6 +33,8 @@ if (!workerRuntime) {
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
+  // CI 擋下誤提交的 test.only，避免只跑部分 E2E 仍顯示通過。
+  forbidOnly: !!process.env.CI,
   // 限制大量瀏覽器同時冷啟動；開發模式另保留給 Vite 編譯的資源。
   workers: workerRuntime ? 4 : 2,
   timeout: 45000,

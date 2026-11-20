@@ -8,7 +8,7 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "object-src 'none'",
   "form-action 'self'",
-  // unsafe-eval 僅開發環境需要（Turbopack/HMR），正式環境拿掉以縮小 XSS 攻擊面。
+  // unsafe-eval 僅開發環境需要（React 開發版以 eval 重建 RSC 的呼叫堆疊），正式環境拿掉以縮小 XSS 攻擊面。
   isProd ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
