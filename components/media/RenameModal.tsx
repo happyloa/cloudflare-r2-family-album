@@ -102,7 +102,9 @@ export function RenameModal({
   return (
     <div
       className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center bg-surface-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
-      onClick={handleCancel}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) handleCancel();
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -111,7 +113,6 @@ export function RenameModal({
     >
       <div
         className="max-h-[calc(100dvh-2rem)] w-[min(560px,92vw)] overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b border-surface-800 px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-400">管理操作</p>

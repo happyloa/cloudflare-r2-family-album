@@ -44,17 +44,18 @@ export function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-[70] flex min-h-screen w-screen items-center justify-center bg-surface-950/90 p-4 backdrop-blur-md animate-modal-backdrop-in"
-      onClick={handleCancel}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) handleCancel();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={submitting}
     >
       <div
         ref={dialogRef}
         className="max-h-[calc(100dvh-2rem)] w-[min(440px,92vw)] space-y-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        aria-busy={submitting}
       >
         <div className="space-y-2">
           <h3 id={titleId} className="text-lg font-semibold text-white">

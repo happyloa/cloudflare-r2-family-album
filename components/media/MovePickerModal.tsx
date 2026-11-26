@@ -189,12 +189,13 @@ export function MovePickerModal({
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
       aria-busy={submitting}
-      onClick={handleCancel}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) handleCancel();
+      }}
     >
       <div
         ref={dialogRef}
         className="flex max-h-[calc(100dvh-2rem)] w-[min(480px,92vw)] flex-col gap-4 overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 p-6 shadow-2xl animate-modal-content-in"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-400">移動到</p>

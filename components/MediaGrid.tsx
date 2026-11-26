@@ -365,7 +365,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
       />
 
       {isAdmin && isDragging && parentPrefix !== null ? (
-        <div
+        <section
           className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-primary-400/60 bg-primary-500/10 px-4 py-3 text-primary-50"
           onDragOver={(event) => {
             event.preventDefault();
@@ -375,7 +375,6 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
             event.preventDefault();
             void moveDraggedItemTo(parentPrefix);
           }}
-          role="button"
           aria-label="將項目放到上一層"
         >
           <div className="flex items-center gap-2 text-sm font-semibold">
@@ -383,7 +382,7 @@ export function MediaGrid({ initialPrefix = '' }: { initialPrefix?: string }) {
             <span>放到上一層</span>
           </div>
           <p className="text-xs text-primary-100/80">將拖曳中的項目移動到「{parentPrefix || '根目錄'}」</p>
-        </div>
+        </section>
       ) : null}
 
       {loading ? (

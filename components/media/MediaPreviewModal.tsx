@@ -121,7 +121,9 @@ export function MediaPreviewModal({
     <div
       className="fixed inset-0 z-50 flex min-h-screen w-screen items-center justify-center overflow-y-auto bg-surface-950/90 p-4 backdrop-blur-md sm:p-6 animate-modal-backdrop-in"
       style={{ zIndex }}
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -129,7 +131,6 @@ export function MediaPreviewModal({
     >
       <div
         className="relative max-h-[calc(100dvh-2rem)] w-[min(1100px,92vw)] overflow-y-auto rounded-3xl border border-surface-700/50 bg-surface-900/95 shadow-2xl animate-modal-content-in"
-        onClick={(event) => event.stopPropagation()}
         ref={dialogRef}
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-surface-800 px-5 py-4">

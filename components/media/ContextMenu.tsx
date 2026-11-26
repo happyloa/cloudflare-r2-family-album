@@ -103,6 +103,7 @@ export function ContextMenu({
     <div
       ref={ref}
       role="menu"
+      tabIndex={-1}
       className="fixed z-[60] min-w-[200px] overflow-hidden rounded-2xl border border-surface-700/70 bg-surface-900/95 py-1.5 shadow-2xl ring-1 ring-white/5 backdrop-blur-md animate-modal-content-in"
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(event) => event.preventDefault()}

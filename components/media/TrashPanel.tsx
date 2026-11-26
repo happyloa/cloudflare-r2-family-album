@@ -113,9 +113,10 @@ export function TrashPanel({ open, revision, authorizedFetch, onClose, onChanged
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-950/90 p-3 backdrop-blur-sm sm:p-6" onClick={() => { if (!working) onClose(); }}>
-        <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={loading || working}
-          className="flex max-h-[calc(100dvh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-surface-700 bg-surface-950 shadow-2xl" onClick={event => event.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={loading || working}
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-950/90 p-3 backdrop-blur-sm sm:p-6" onClick={event => { if (event.target === event.currentTarget && !working) onClose(); }}>
+        <div ref={panelRef}
+          className="flex max-h-[calc(100dvh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-surface-700 bg-surface-950 shadow-2xl">
           <header className="flex shrink-0 items-start justify-between gap-4 border-b border-surface-700/60 p-5 sm:p-6">
             <div className="min-w-0 space-y-2">
               <h2 id={titleId} className="text-2xl font-medium text-surface-50">垃圾桶</h2>
