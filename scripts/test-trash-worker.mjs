@@ -14,7 +14,8 @@ try {
   const worker = await mf.getWorker();
   const result = await worker.scheduled({ cron: '0 * * * *', scheduledTime: now });
   assert.equal(result.outcome, 'ok');
-  const remaining = (await bucket.list()).objects.map(object => object.key).sort();
-  assert.deepEqual(remaining, [future, `${prefix}unknown.jpg`, 'ordinary.jpg'].sort());
+  const byName = (a, b) => a.localeCompare(b);
+  const remaining = (await bucket.list()).objects.map(object => object.key).sort(byName);
+  assert.deepEqual(remaining, [future, `${prefix}unknown.jpg`, 'ordinary.jpg'].sort(byName));
   console.log('Built Worker scheduled cleanup passed with simulated R2.');
 } finally { await mf.dispose(); }

@@ -1,10 +1,10 @@
-import { hasPeriodOnlyPathSegment } from './path';
+import { hasPeriodOnlyPathSegment, normalizePath } from './path';
 
 export const TRASH_PREFIX = '.family-album-trash/';
 export const DAY_MS = 86_400_000;
 
 export function isTrashPath(key: string) {
-  const normalized = key.replace(/^\/+|\/+$/g, '').trim();
+  const normalized = normalizePath(key);
   return normalized === TRASH_PREFIX.slice(0, -1) || normalized.startsWith(TRASH_PREFIX);
 }
 

@@ -26,7 +26,7 @@ try {
     api('/api/media', 'PATCH', { action: 'rename', key: 'c.jpg', newName: 'a' }),
   ]);
   for (const response of responses) assert.ok([200, 404].includes(response.status), `unexpected status ${response.status}`);
-  assert.deepEqual(Object.values(await contents()).sort(), ['A-original', 'C-unique']);
+  assert.deepEqual(Object.values(await contents()).sort((a, b) => a.localeCompare(b)), ['A-original', 'C-unique']);
   const renamed = Object.entries(await contents()).find(([, value]) => value === 'A-original')[0];
   assert.equal((await bucket.head(renamed)).httpMetadata.contentType, 'image/jpeg', 'a copy must keep the stored Content-Type');
 

@@ -2,6 +2,7 @@
 
 import type { MediaFile } from '@/lib/r2';
 import type { UploadLimits } from '@/lib/upload/constants';
+import { trimSlashes } from '@/lib/path';
 
 /**
  * 上傳相關的前端共用邏輯
@@ -190,7 +191,7 @@ export async function uploadFiles({
   onProgress,
   onUnauthorized,
 }: UploadOptions): Promise<UploadResult> {
-  const safePath = path.trim().replace(/^\/+|\/+$/g, '');
+  const safePath = trimSlashes(path.trim());
 
   const formData = new FormData();
   files.forEach((mediaFile) => formData.append('files', mediaFile));

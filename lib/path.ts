@@ -1,7 +1,18 @@
 // 共用的路徑處理純函式（client 與 server 共用，避免重複實作）
 
 // Stored object keys keep their inner characters; only normalize the boundary.
-export const normalizePath = (path: string) => path.replace(/^\/+|\/+$/g, '').trim();
+// 用掃描而非 /\/+$/：該樣式遇到大量斜線時，比對時間呈平方成長。
+export const trimTrailingSlashes = (value: string) => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
+};
+export const trimSlashes = (value: string) => {
+  let start = 0;
+  while (value[start] === '/') start++;
+  return trimTrailingSlashes(value.slice(start));
+};
+export const normalizePath = (path: string) => trimSlashes(path).trim();
 
 // 清理單一名稱片段：移除不合法字元與控制字元（例如貼上的 tab），並去除前後空白
 export const sanitizeName = (value: string) =>

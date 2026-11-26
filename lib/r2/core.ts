@@ -1,6 +1,6 @@
 import { env as workerEnv } from "cloudflare:workers";
 
-import { normalizePath } from "../path";
+import { normalizePath, trimTrailingSlashes } from "../path";
 
 // ── 型別 ──
 
@@ -66,7 +66,7 @@ function encodeR2PathSegment(segment: string) {
 // 將 Key 編碼為公開 URL
 export function encodeKeyForUrl(key: string, base = getPublicBase()) {
   const url = new URL(base);
-  const basePath = url.pathname.replace(/\/+$/, "");
+  const basePath = trimTrailingSlashes(url.pathname);
   const encodedKey = key.split("/").map(encodeR2PathSegment).join("/");
   return `${url.origin}${basePath}/${encodedKey}${url.search}`;
 }
