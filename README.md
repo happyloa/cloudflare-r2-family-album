@@ -83,4 +83,4 @@ npm 阻擋安裝腳本時，用 `npm install-scripts ls` 檢查再核准；`allo
 
 ## 依賴維護
 
-`package.json` 覆寫 `postcss` 版本，並把 `satori` 的 `fflate` 固定在 0.7.5（升到 0.8 會壞）。移除覆寫前需通過 `npm audit` 與完整驗證。
+`package.json` 覆寫 `postcss` 版本，把 `satori` 的 `fflate` 固定在 0.7.5（升到 0.8 會壞），並將上游固定的 `undici` 7.30.1 指向修正版 7.30.2。移除覆寫前需通過 `npm audit` 與完整驗證。

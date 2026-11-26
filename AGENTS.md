@@ -23,7 +23,7 @@
 
 - 功能或依賴異動跑 `npm run verify`；框架或互動異動另跑 `npm run test:e2e` 與 `npm run test:e2e:worker`。
 - 文件要核對指令、路徑、連結與實作。
-- 保留 `postcss` 與 `satori/fflate` 覆寫，移除前確認上游修補並通過 `npm audit` 與建置。
+- 保留 `postcss`、`satori/fflate` 與 `undici` 覆寫，移除前確認上游修補並通過 `npm audit` 與建置。
 
 ## Cloudflare 與文件
 
