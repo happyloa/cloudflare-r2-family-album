@@ -24,10 +24,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm audit
       - run: npm run verify
-      - run: npx playwright install --with-deps chromium --only-shell
+      - run: ./node_modules/.bin/playwright install --with-deps chromium --only-shell
       - run: npm run test:e2e
       - run: npm run test:e2e:worker
       - name: Upload failed E2E traces
